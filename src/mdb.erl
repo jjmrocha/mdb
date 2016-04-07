@@ -54,7 +54,9 @@ buckets() ->
 		end, [], ?MDB_STORAGE).
 
 %% @doc Creates a new bucket
-%% Options: keep_history - Don't remove old versions
+%% Options: 
+%%	keep_history - Don't remove old versions
+%%
 %% Reasons:
 %% 	bucket_already_exists - If the bucket already exists 
 -spec create(Bucket::atom(), Options::list()) -> ok | {error, Reason::term()}.
@@ -149,12 +151,14 @@ get(Bucket, Key, Version) when is_atom(Bucket), is_integer(Version) ->
 %%	bucket_not_found - If the bucket doesn't exists
 %%	key_not_found - If the key doesn't exists
 %%	version_not_found - If the version doesn't exists
-%%	deleted - If the key was deleted
 -spec get(Bucket::atom(), Key::term()) -> {ok, Value::term(), Version::integer()} | {error, Reason::term()}.
 get(Bucket, Key) when is_atom(Bucket) -> 
 	with_bucket(Bucket, fun(BI) -> 
 				PK = get_last_version(BI, Key, ?MDB_VERSION_LAST),
-				get_value(BI, PK)
+				case get_value(BI, PK) of
+					{error, deleted} -> {error, key_not_found};
+					Other -> Other
+				end
 		end).
 
 %% @doc Return the current version for a key 
