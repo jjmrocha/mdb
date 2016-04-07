@@ -154,8 +154,7 @@ get(Bucket, Key, Version) when is_atom(Bucket), is_integer(Version) ->
 -spec get(Bucket::atom(), Key::term()) -> {ok, Value::term(), Version::integer()} | {error, Reason::term()}.
 get(Bucket, Key) when is_atom(Bucket) -> 
 	with_bucket(Bucket, fun(BI) -> 
-				PK = get_last_version(BI, Key, ?MDB_VERSION_LAST),
-				case get_value(BI, PK) of
+				case get_value(BI, Key) of
 					{error, deleted} -> {error, key_not_found};
 					Other -> Other
 				end
@@ -195,9 +194,7 @@ put(Bucket, Key, Value) when is_atom(Bucket) ->
 put(Bucket, Key, Value, ReadVersion) when is_atom(Bucket) ->
 	with_bucket(Bucket, fun(BI) ->
 				WriteVersion = timestamp(),
-				catcher(fun() ->
-							write_key_value(BI, Key, ReadVersion, Value, WriteVersion)
-					end)
+				?catcher(write_key_value(BI, Key, ReadVersion, Value, WriteVersion))
 		end).
 
 -spec remove(Bucket::atom(), Key::term()) -> {ok, Version::integer()} | {error, Reason::term()}.
@@ -207,10 +204,12 @@ remove(Bucket, Key) when is_atom(Bucket) ->
 -spec remove(Bucket::atom(), Key::term(), ReadVersion::integer()) -> {ok, Version::integer()} | {error, Reason::term()}.
 remove(Bucket, Key, ReadVersion) when is_atom(Bucket) -> 
 	with_bucket(Bucket, fun(BI) ->
-				WriteVersion = timestamp(),
-				catcher(fun() ->
-							write_key_value(BI, Key, ReadVersion, ?MDB_RECORD_DELETED, WriteVersion)
-					end)
+				case get_value(BI, Key, ReadVersion) of
+					{ok, _Value, Version} ->
+						WriteVersion = timestamp(),
+						?catcher(write_key_value(BI, Key, Version, ?MDB_RECORD_DELETED, WriteVersion));
+					Other -> Other
+				end
 		end).
 
 -spec fold(Fun::fun((Key::term(), Value::term(), Acc::term()) -> Acc1::term()), Acc::term(), Bucket::atom()) -> {ok, Acc1::term()} | {error, Reason::term()}.
@@ -311,11 +310,6 @@ get_bucket(Bucket) ->
 		[BI] -> {ok, BI}
 	end.
 
-catcher(Fun) ->
-	try Fun()
-	catch _:{system_abort, Reason} -> {error, Reason}
-	end.
-
 db_clean() ->
 	{ok, Threshold} = application:get_env(obsolete_threshold),
 	TS = timestamp(Threshold),
@@ -360,12 +354,30 @@ timestamp() ->
 	Seconds = calendar:datetime_to_gregorian_seconds(Utc),
 	((Seconds - 62167219200) * 1000000) + Micro. 
 
+get_value(BI, Key, Version) ->
+	PK = get_last_version(BI, Key, Version),
+	get_value(BI, PK).
+
+get_value(_, ?MDB_KEY_NOT_FOUND) -> {error, key_not_found};
+get_value(#bucket{ets=TID}, PK=?MDB_PK_RECORD(_Key, _Version)) ->
+	case ets:lookup(TID, PK) of
+		[] -> {error, version_not_found};
+		[?MDB_RECORD(_Key, _Version, ?MDB_RECORD_DELETED)] -> {error, deleted};
+		[?MDB_RECORD(_Key, Version, Value)] -> {ok, Value, Version}
+	end;
+get_value(#bucket{ets=TID}, Key) ->
+	get_value(#bucket{ets=TID}, Key, ?MDB_VERSION_LAST).
+
 get_last_version(#bucket{ets=TID}, Key, Version) ->
-	case ets:prev(TID, ?MDB_PK_RECORD(Key, Version)) of
+	FixedVersion = fix_search_version(Version),
+	case ets:prev(TID, ?MDB_PK_RECORD(Key, FixedVersion)) of
 		'$end_of_table' -> ?MDB_KEY_NOT_FOUND;
 		Last = ?MDB_PK_RECORD(Key, _) -> Last;
 		_ -> ?MDB_KEY_NOT_FOUND
 	end.
+	
+fix_search_version(?MDB_VERSION_LAST) -> ?MDB_VERSION_LAST;
+fix_search_version(Version) -> Version + 0.1.
 	
 versions(#bucket{ets=TID}, Key) ->
 	versions(TID, ?MDB_PK_RECORD(Key, ?MDB_VERSION_LAST), []).
@@ -384,14 +396,6 @@ is_last_version(#bucket{ets=TID}, PK=?MDB_PK_RECORD(Key, _)) ->
 		'$end_of_table' -> true;
 		?MDB_PK_RECORD(Key, _) -> false;
 		_ -> true
-	end.	
-
-get_value(_, ?MDB_KEY_NOT_FOUND) -> {error, key_not_found};
-get_value(#bucket{ets=TID}, PK) ->
-	case ets:lookup(TID, PK) of
-		[] -> {error, version_not_found};
-		[?MDB_RECORD(_Key, _Version, ?MDB_RECORD_DELETED)] -> {error, deleted};
-		[?MDB_RECORD(_Key, Version, Value)] -> {ok, Value, Version}
 	end.
 
 write_key_value(BI=#bucket{ets=TID}, Key, ReadVersion, Value, WriteVersion) ->
@@ -405,6 +409,8 @@ validate_read_version(BI, Key, Version) ->
 		true -> ok;
 		false -> system_abort(not_last_version)
 	end.
+
+system_abort(Reason) -> throw({system_abort, Reason}).
 
 do_fold(#bucket{ets=TID}, Fun, Acc, Version) ->
 	MatchSpec = [{?MDB_RECORD('$1', '$2', '$3'), [{'<', '$2', Version}], ['$_']}],
@@ -425,5 +431,3 @@ do_fold(TID, Fun, Acc, Continuation, LastKey, []) ->
 		{Matched, Continuation1} -> do_fold(TID, Fun, Acc, Continuation1, LastKey, Matched);
 		'$end_of_table' -> Acc
 	end.
-
-system_abort(Reason) -> throw({system_abort, Reason}).
