@@ -293,7 +293,7 @@ get_bucket(Bucket) ->
 	end.
 
 catcher(Fun) ->
-	try Fun
+	try Fun()
 	catch _:{system_abort, Reason} -> {error, Reason}
 	end.
 
