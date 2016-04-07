@@ -30,7 +30,8 @@
 -export([buckets/0]).
 -export([create/2, drop/1, size/1, keys/1, memory/1]).
 -export([to_list/1, from_list/2]).
--export([get/2, get/3, version/2, put/3, put/4, remove/2, remove/3]).
+-export([get/2, get/3, put/3, put/4, remove/2, remove/3]).
+-export([version/2, history/2]).
 -export([fold/3, foreach/2, filter/2]).
 -export([delete/2, update/2]).
 
@@ -53,6 +54,7 @@ buckets() ->
 		end, [], ?MDB_STORAGE).
 
 %% @doc Creates a new bucket
+%% Options: keep_history - Don't remove old versions
 %% Reasons:
 %% 	bucket_already_exists - If the bucket already exists 
 -spec create(Bucket::atom(), Options::list()) -> ok | {error, Reason::term()}.
@@ -165,6 +167,19 @@ version(Bucket, Key) when is_atom(Bucket) ->
 				case get_last_version(BI, Key, ?MDB_VERSION_LAST) of
 					?MDB_KEY_NOT_FOUND -> {error, key_not_found};
 					?MDB_PK_RECORD(_Key, Version) -> {ok, Version}		
+				end
+		end).
+
+%% @doc Return the list of versions for a key 
+%% Returns:
+%%	bucket_not_found - If the bucket doesn't exists
+%%	key_not_found - If the key doesn't exists
+-spec history(Bucket::atom(), Key::term()) -> {ok, Versions::list()} | {error, Reason::term()}.		
+history(Bucket, Key) when is_atom(Bucket) -> 
+	with_bucket(Bucket, fun(BI) -> 
+				case versions(BI, Key) of
+					?MDB_KEY_NOT_FOUND -> {error, key_not_found};
+					Versions -> {ok, Versions}
 				end
 		end).
 
@@ -301,11 +316,15 @@ db_clean() ->
 	{ok, Threshold} = application:get_env(obsolete_threshold),
 	TS = timestamp(Threshold),
 	MatchSpec = [{?MDB_RECORD('$1', '$2', '$3'), [{'<', '$2', TS}], ['$_']}],
-	ets:foldl(fun(BI=#bucket{ets=TID}, _Acc) -> 
-				case ets:select_reverse(TID, MatchSpec, 500) of
-					{Matched, Continuation} -> do_clean(BI, Continuation, '$mdb_no_key', Matched);
-					'$end_of_table' -> ok
-				end 
+	ets:foldl(fun(BI=#bucket{ets=TID, options=Options}, _Acc) ->
+				case lists:member(keep_history, Options) of
+					true -> ok;
+					false ->
+						case ets:select_reverse(TID, MatchSpec, 500) of
+							{Matched, Continuation} -> do_clean(BI, Continuation, '$mdb_no_key', Matched);
+							'$end_of_table' -> ok
+						end 
+				end
 		end, 0, ?MDB_STORAGE).
 
 do_clean(BI=#bucket{ets=TID}, Continuation, LastKey, [?MDB_RECORD(LastKey, Version, _)|T]) ->
@@ -343,6 +362,17 @@ get_last_version(#bucket{ets=TID}, Key, Version) ->
 		Last = ?MDB_PK_RECORD(Key, _) -> Last;
 		_ -> ?MDB_KEY_NOT_FOUND
 	end.
+	
+versions(#bucket{ets=TID}, Key) ->
+	versions(TID, ?MDB_PK_RECORD(Key, ?MDB_VERSION_LAST), []).
+	
+versions(TID, PK, Acc) ->
+	case ets:prev(TID, PK) of
+		'$end_of_table' when length(Acc) =:= 0 -> ?MDB_KEY_NOT_FOUND;
+		'$end_of_table' -> Acc;
+		Prev = ?MDB_PK_RECORD(Key, Version) -> versions(TID, Prev, [Version|Acc]);
+		_ -> Acc
+	end.	
 
 is_last_version(#bucket{ets=TID}, PK=?MDB_PK_RECORD(Key, _)) ->
 	case ets:next(TID, PK) of
