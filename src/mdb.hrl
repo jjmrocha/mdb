@@ -28,3 +28,9 @@
 
 -define(MDB_RECORD_DELETED, '$mdb_record_deleted').
 -define(MDB_KEY_NOT_FOUND, '$mdb_key_not_found').
+
+-define(catcher(Call), 
+  try Call
+	catch _:{system_abort, Reason} -> {error, Reason}
+	end.
+).
