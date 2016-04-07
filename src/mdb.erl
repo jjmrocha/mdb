@@ -141,7 +141,8 @@ get(Bucket, Key, Version) when is_atom(Bucket), is_integer(Version) ->
 	with_bucket(Bucket, fun(BI) -> 
 				PK = ?MDB_PK_RECORD(Key, Version),
 				case get_value(BI, PK) of 
-					{ok, Value, _} -> {ok, Value};
+					{ok, Value, Version} -> {ok, Value};
+					{ok, _Value, _Version} -> {error, version_not_found};
 					Other -> Other
 				end
 		end).
@@ -215,8 +216,7 @@ remove(Bucket, Key, ReadVersion) when is_atom(Bucket) ->
 -spec fold(Fun::fun((Key::term(), Value::term(), Acc::term()) -> Acc1::term()), Acc::term(), Bucket::atom()) -> {ok, Acc1::term()} | {error, Reason::term()}.
 fold(Fun, Acc, Bucket) when is_function(Fun, 4), is_atom(Bucket) -> 
 	with_bucket(Bucket, fun(BI) -> 
-				ReadVersion = timestamp(),
-				Acc1 = do_fold(BI, Fun, Acc, ReadVersion),
+				Acc1 = do_fold(BI, Fun, Acc),
 				{ok, Acc1}
 		end).
 
@@ -234,25 +234,33 @@ filter(Fun, Bucket) when is_function(Fun, 2), is_atom(Bucket) ->
 				end
 		end, [], Bucket).
 
-delete(Bucket, Fun) when is_atom(Bucket), is_function(Fun, 2) ->
-	fold(fun(Key, Value, _Version, Acc) -> 
-				case Fun(Key, Value) of
-					true -> 
-						remove(Bucket, Key),
-						Acc + 1;
-					false -> Acc
-				end
-		end, 0, Bucket).
+delete(Fun, Bucket) when is_function(Fun, 2), is_atom(Bucket) ->
+	WriteVersion = timestamp(),
+	with_bucket(Bucket, fun(BI) -> 
+				Acc1 = do_fold(BI, fun(Key, Value, _Version, Acc) -> 
+								case Fun(Key, Value) of
+									true -> 
+										write_key_value(BI, Key, ?MDB_VERSION_LAST, ?MDB_RECORD_DELETED, WriteVersion),
+										Acc + 1;
+									false -> Acc
+								end
+						end, 0),
+				{ok, Acc1}
+		end).
 
-update(Bucket, Fun) when is_atom(Bucket), is_function(Fun, 2) ->
-	fold(fun(Key, Value, _Version, Acc) -> 
-				case Fun(Key, Value) of
-					{true, NewValue} -> 
-						put(Bucket, Key, NewValue),
-						Acc + 1;
-					false -> Acc
-				end
-		end, 0, Bucket).	
+update(Fun, Bucket) when is_function(Fun, 2), is_atom(Bucket) ->
+	WriteVersion = timestamp(),
+	with_bucket(Bucket, fun(BI) -> 
+				Acc1 = do_fold(BI, fun(Key, Value, _Version, Acc) -> 
+								case Fun(Key, Value) of
+									{true, NewValue} -> 
+										write_key_value(BI, Key, ?MDB_VERSION_LAST, NewValue, WriteVersion),
+										Acc + 1;
+									false -> Acc
+								end
+						end, 0),
+				{ok, Acc1}
+		end).
 
 %% ====================================================================
 %% Behavioural functions
@@ -375,13 +383,13 @@ get_last_version(#bucket{ets=TID}, Key, Version) ->
 		Last = ?MDB_PK_RECORD(Key, _) -> Last;
 		_ -> ?MDB_KEY_NOT_FOUND
 	end.
-	
+
 fix_search_version(?MDB_VERSION_LAST) -> ?MDB_VERSION_LAST;
 fix_search_version(Version) -> Version + 0.1.
-	
+
 versions(#bucket{ets=TID}, Key) ->
 	versions(TID, ?MDB_PK_RECORD(Key, ?MDB_VERSION_LAST), []).
-	
+
 versions(TID, PK=?MDB_PK_RECORD(Key, _), Acc) ->
 	case ets:prev(TID, PK) of
 		'$end_of_table' when length(Acc) =:= 0 -> ?MDB_KEY_NOT_FOUND;
@@ -411,6 +419,10 @@ validate_read_version(BI, Key, Version) ->
 	end.
 
 system_abort(Reason) -> throw({system_abort, Reason}).
+
+do_fold(BI, Fun, Acc) ->
+	ReadVersion = timestamp(),
+	do_fold(BI, Fun, Acc, ReadVersion).
 
 do_fold(#bucket{ets=TID}, Fun, Acc, Version) ->
 	MatchSpec = [{?MDB_RECORD('$1', '$2', '$3'), [{'<', '$2', Version}], ['$_']}],
