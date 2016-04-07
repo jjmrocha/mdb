@@ -195,7 +195,7 @@ remove(Bucket, Key, ReadVersion) when is_atom(Bucket) ->
 		end).
 
 -spec fold(Fun::fun((Key::term(), Value::term(), Acc::term()) -> Acc1::term()), Acc::term(), Bucket::atom()) -> {ok, Acc1::term()} | {error, Reason::term()}.
-fold(Fun, Acc, Bucket) when is_function(Fun, 3), is_atom(Bucket) -> 
+fold(Fun, Acc, Bucket) when is_function(Fun, 4), is_atom(Bucket) -> 
 	with_bucket(Bucket, fun(BI) -> 
 				ReadVersion = timestamp(),
 				Acc1 = do_fold(BI, Fun, Acc, ReadVersion),
