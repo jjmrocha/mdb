@@ -366,11 +366,12 @@ get_last_version(#bucket{ets=TID}, Key, Version) ->
 versions(#bucket{ets=TID}, Key) ->
 	versions(TID, ?MDB_PK_RECORD(Key, ?MDB_VERSION_LAST), []).
 	
-versions(TID, PK, Acc) ->
+versions(TID, PK=?MDB_PK_RECORD(Key, _), Acc) ->
 	case ets:prev(TID, PK) of
 		'$end_of_table' when length(Acc) =:= 0 -> ?MDB_KEY_NOT_FOUND;
 		'$end_of_table' -> Acc;
 		Prev = ?MDB_PK_RECORD(Key, Version) -> versions(TID, Prev, [Version|Acc]);
+		_ when length(Acc) =:= 0 -> ?MDB_KEY_NOT_FOUND;
 		_ -> Acc
 	end.	
 
