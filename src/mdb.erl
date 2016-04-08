@@ -345,7 +345,7 @@ db_clean() ->
 		end, 0, ?MDB_STORAGE).
 
 do_clean(BI=#bucket{ets=TID}) ->
-	{ok, Threshold} = application:get_env(obsolete_threshold),
+	{ok, Threshold} = application:get_env(mdb, obsolete_threshold),
 	TS = timestamp(Threshold),
 	do_clean(BI=#bucket{ets=TID}, TS).
 	
