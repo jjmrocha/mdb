@@ -31,7 +31,7 @@
 -export([create/2, drop/1, size/1, keys/1, memory/1]).
 -export([to_list/1, from_list/2]).
 -export([get/2, get/3, put/3, put/4, remove/2, remove/3]).
--export([version/2, history/2]).
+-export([version/2, history/2, purge/1]).
 -export([fold/3, foreach/2, filter/2]).
 -export([delete/2, update/2]).
 
@@ -187,6 +187,12 @@ history(Bucket, Key) when is_atom(Bucket) ->
 				end
 		end).
 
+-spec purge(Bucket::atom()) -> ok | {error, Reason::term()}.	
+purge(Bucket) when is_atom(Bucket) -> 
+	with_bucket(Bucket, fun(BI) -> 
+				do_clean(BI)
+		end).
+
 -spec put(Bucket::atom(), Key::term(), Value::term()) -> {ok, Version::integer()} | {error, Reason::term()}.
 put(Bucket, Key, Value) when is_atom(Bucket) ->
 	put(Bucket, Key, Value, ?MDB_VERSION_LAST).
@@ -321,17 +327,24 @@ get_bucket(Bucket) ->
 db_clean() ->
 	{ok, Threshold} = application:get_env(obsolete_threshold),
 	TS = timestamp(Threshold),
-	MatchSpec = [{?MDB_RECORD('$1', '$2', '$3'), [{'<', '$2', TS}], ['$_']}],
 	ets:foldl(fun(BI=#bucket{ets=TID, options=Options}, _Acc) ->
 				case lists:member(keep_history, Options) of
 					true -> ok;
-					false ->
-						case ets:select_reverse(TID, MatchSpec, 500) of
-							{Matched, Continuation} -> do_clean(BI, Continuation, '$mdb_no_key', Matched);
-							'$end_of_table' -> ok
-						end 
+					false -> do_clean(BI=#bucket{ets=TID}, TS) 
 				end
 		end, 0, ?MDB_STORAGE).
+
+do_clean(BI=#bucket{ets=TID}) ->
+	{ok, Threshold} = application:get_env(obsolete_threshold),
+	TS = timestamp(Threshold),
+	do_clean(BI=#bucket{ets=TID}, TS).
+	
+do_clean(BI=#bucket{ets=TID}, TS) ->
+	MatchSpec = [{?MDB_RECORD('$1', '$2', '$3'), [{'<', '$2', TS}], ['$_']}],
+	case ets:select_reverse(TID, MatchSpec, 500) of
+		{Matched, Continuation} -> do_clean(BI, Continuation, '$mdb_no_key', Matched);
+		'$end_of_table' -> ok
+	end. 
 
 do_clean(BI=#bucket{ets=TID}, Continuation, LastKey, [?MDB_RECORD(LastKey, Version, _)|T]) ->
 	ets:delete(TID, ?MDB_PK_RECORD(LastKey, Version)),
