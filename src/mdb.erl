@@ -28,7 +28,7 @@
 -export([start_link/0]).
 -export([memory/0]).
 -export([buckets/0]).
--export([create/2, drop/1, size/1, keys/1, memory/1]).
+-export([create/2, drop/1, size/1, keys/1, memory/1, delete/1]).
 -export([to_list/1, from_list/2]).
 -export([get/2, get/3, put/3, put/4, remove/2, remove/3]).
 -export([version/2, history/2, purge/1]).
@@ -81,7 +81,17 @@ drop(Bucket) when is_atom(Bucket) ->
 			ok;
 		Other -> Other
 	end.
-
+	
+delete(Bucket) when is_atom(Bucket) ->	
+	WriteVersion = timestamp(),
+	with_bucket(Bucket, fun(BI) -> 
+				Acc1 = do_fold(BI, fun(Key, Value, _Version, Acc) -> 
+								write_key_value(BI, Key, ?MDB_VERSION_LAST, ?MDB_RECORD_DELETED, WriteVersion),
+								Acc + 1
+						end, 0),
+				{ok, Acc1}
+		end).
+		
 %% @doc Returs the number of keys on the bucket
 %% Returns:
 %%	bucket_not_found - If the bucket doesn't exists
