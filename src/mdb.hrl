@@ -14,8 +14,6 @@
 %% limitations under the License.
 %%
 
-
--define(MDB_STORAGE, mdb_schema).
 -record(bucket, {name, ets, options}).
 
 -define(MDB_DB_CLEAN_INTERVAL, 60000).

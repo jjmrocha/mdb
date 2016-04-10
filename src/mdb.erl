@@ -40,18 +40,14 @@ start_link() ->
 
 %% @doc Used memory by MDB
 -spec memory() -> integer().
-memory() -> 
-	Master = ets:info(?MDB_STORAGE, memory),
-	ets:foldl(fun(#bucket{ets=TID}, Acc) -> 
-				Acc + ets:info(TID, memory) 
-		end, Master, ?MDB_STORAGE).	
+memory() -> mdb_storage:memory().
 
 %% @doc Returns the list of buckets
 -spec buckets() -> list().
 buckets() -> 
-	ets:foldr(fun(#bucket{name=Name}, Acc) -> 
+	mdb_storage:fold(fun(#bucket{name=Name}, Acc) -> 
 				[Name|Acc] 
-		end, [], ?MDB_STORAGE).
+		end, []).
 
 %% @doc Creates a new bucket
 %% Options: 
@@ -61,37 +57,25 @@ buckets() ->
 %% 	bucket_already_exists - If the bucket already exists 
 -spec create(Bucket::atom(), Options::list()) -> ok | {error, Reason::term()}.
 create(Bucket, Options) when is_atom(Bucket), is_list(Options) -> 
-	case get_bucket(Bucket) of
-		{ok, _} -> {error, bucket_already_exists};
-		{error, bucket_not_found} ->
-			TID = ets:new(?MDB_STORAGE, [ordered_set, public, {read_concurrency, true}, {write_concurrency, true}]),
-			true = ets:insert(?MDB_STORAGE, #bucket{name=Bucket, ets=TID, options=Options}),
-			ok
-	end.
+	mdb_storage:create(Bucket, Options).
 
 %% @doc Drops the buckets
 %% Reasons:
 %%	bucket_not_found - If the bucket doesn't exists
 -spec drop(Bucket::atom()) -> ok | {error, Reason::term()}.
 drop(Bucket) when is_atom(Bucket) -> 
-	case get_bucket(Bucket) of
-		{ok, #bucket{ets=TID}} -> 
-			ets:delete(TID),
-			ets:delete(?MDB_STORAGE, Bucket),
-			ok;
-		Other -> Other
-	end.
-	
+	mdb_storage:drop(Bucket).
+
 delete(Bucket) when is_atom(Bucket) ->	
-	WriteVersion = timestamp(),
-	with_bucket(Bucket, fun(BI) -> 
-				Acc1 = do_fold(BI, fun(Key, Value, _Version, Acc) -> 
-								write_key_value(BI, Key, ?MDB_VERSION_LAST, ?MDB_RECORD_DELETED, WriteVersion),
+	WriteVersion = mdb_hlc:timestamp(),
+	mdb_storage:with_bucket(Bucket, fun(BI) -> 
+				Acc1 = mdb_mvcc:fold(BI, fun(Key, _Value, _Version, Acc) -> 
+								mdb_mvcc:write_key_value(BI, Key, ?MDB_VERSION_LAST, ?MDB_RECORD_DELETED, WriteVersion),
 								Acc + 1
 						end, 0),
 				{ok, Acc1}
 		end).
-		
+
 %% @doc Returs the number of keys on the bucket
 %% Returns:
 %%	bucket_not_found - If the bucket doesn't exists
@@ -115,12 +99,7 @@ keys(Bucket) when is_atom(Bucket) ->
 %%	bucket_not_found - If the bucket doesn't exists
 -spec memory(Bucket::atom()) -> {ok, Size::integer()} | {error, Reason::term()}.
 memory(Bucket) when is_atom(Bucket) -> 
-	case get_bucket(Bucket) of
-		{ok, #bucket{ets=TID}} -> 
-			Size = ets:info(TID, memory),
-			{ok, Size};
-		Other -> Other
-	end.
+	mdb_storage:memory(Bucket).
 
 %% @doc Returs the Key/Value par from the bucket
 %% Returns:
@@ -148,9 +127,9 @@ from_list(Bucket, KeyValueList) when is_atom(Bucket), is_list(KeyValueList) ->
 %%	deleted - If the key was deleted
 -spec get(Bucket::atom(), Key::term(), Version::integer()) -> {ok, Value::term()} | {error, Reason::term()}.
 get(Bucket, Key, Version) when is_atom(Bucket), is_integer(Version) -> 
-	with_bucket(Bucket, fun(BI) -> 
+	mdb_storage:with_bucket(Bucket, fun(BI) -> 
 				PK = ?MDB_PK_RECORD(Key, Version),
-				case get_value(BI, PK) of 
+				case mdb_mvcc:get_value(BI, PK) of 
 					{ok, Value, Version} -> {ok, Value};
 					{ok, _Value, _Version} -> {error, version_not_found};
 					Other -> Other
@@ -164,8 +143,8 @@ get(Bucket, Key, Version) when is_atom(Bucket), is_integer(Version) ->
 %%	version_not_found - If the version doesn't exists
 -spec get(Bucket::atom(), Key::term()) -> {ok, Value::term(), Version::integer()} | {error, Reason::term()}.
 get(Bucket, Key) when is_atom(Bucket) -> 
-	with_bucket(Bucket, fun(BI) -> 
-				case get_value(BI, Key) of
+	mdb_storage:with_bucket(Bucket, fun(BI) -> 
+				case mdb_mvcc:get_value(BI, Key) of
 					{error, deleted} -> {error, key_not_found};
 					Other -> Other
 				end
@@ -177,8 +156,8 @@ get(Bucket, Key) when is_atom(Bucket) ->
 %%	key_not_found - If the key doesn't exists
 -spec version(Bucket::atom(), Key::term()) -> {ok, Version::integer()} | {error, Reason::term()}.
 version(Bucket, Key) when is_atom(Bucket) -> 
-	with_bucket(Bucket, fun(BI) -> 
-				case get_last_version(BI, Key, ?MDB_VERSION_LAST) of
+	mdb_storage:with_bucket(Bucket, fun(BI) -> 
+				case mdb_mvcc:get_last_version(BI, Key, ?MDB_VERSION_LAST) of
 					?MDB_KEY_NOT_FOUND -> {error, key_not_found};
 					?MDB_PK_RECORD(_Key, Version) -> {ok, Version}		
 				end
@@ -190,8 +169,8 @@ version(Bucket, Key) when is_atom(Bucket) ->
 %%	key_not_found - If the key doesn't exists
 -spec history(Bucket::atom(), Key::term()) -> {ok, Versions::list()} | {error, Reason::term()}.		
 history(Bucket, Key) when is_atom(Bucket) -> 
-	with_bucket(Bucket, fun(BI) -> 
-				case versions(BI, Key) of
+	mdb_storage:with_bucket(Bucket, fun(BI) -> 
+				case mdb_mvcc:versions(BI, Key) of
 					?MDB_KEY_NOT_FOUND -> {error, key_not_found};
 					Versions -> {ok, Versions}
 				end
@@ -199,8 +178,8 @@ history(Bucket, Key) when is_atom(Bucket) ->
 
 -spec purge(Bucket::atom()) -> ok | {error, Reason::term()}.	
 purge(Bucket) when is_atom(Bucket) -> 
-	with_bucket(Bucket, fun(BI) -> 
-				do_clean(BI)
+	mdb_storage:with_bucket(Bucket, fun(BI) -> 
+				mdb_mvcc:clean(BI)
 		end).
 
 -spec put(Bucket::atom(), Key::term(), Value::term()) -> {ok, Version::integer()} | {error, Reason::term()}.
@@ -209,9 +188,9 @@ put(Bucket, Key, Value) when is_atom(Bucket) ->
 
 -spec put(Bucket::atom(), Key::term(), Value::term(), ReadVersion::integer()) -> {ok, Version::integer()} | {error, Reason::term()}.
 put(Bucket, Key, Value, ReadVersion) when is_atom(Bucket) ->
-	with_bucket(Bucket, fun(BI) ->
-				WriteVersion = timestamp(),
-				?catcher(write_key_value(BI, Key, ReadVersion, Value, WriteVersion))
+	mdb_storage:with_bucket(Bucket, fun(BI) ->
+				WriteVersion = mdb_hlc:timestamp(),
+				?catcher(mdb_mvcc:write_key_value(BI, Key, ReadVersion, Value, WriteVersion))
 		end).
 
 -spec remove(Bucket::atom(), Key::term()) -> {ok, Version::integer()} | {error, Reason::term()}.
@@ -220,19 +199,19 @@ remove(Bucket, Key) when is_atom(Bucket) ->
 
 -spec remove(Bucket::atom(), Key::term(), ReadVersion::integer()) -> {ok, Version::integer()} | {error, Reason::term()}.
 remove(Bucket, Key, ReadVersion) when is_atom(Bucket) -> 
-	with_bucket(Bucket, fun(BI) ->
-				case get_value(BI, Key, ReadVersion) of
+	mdb_storage:with_bucket(Bucket, fun(BI) ->
+				case mdb_mvcc:get_value(BI, Key, ReadVersion) of
 					{ok, _Value, Version} ->
-						WriteVersion = timestamp(),
-						?catcher(write_key_value(BI, Key, Version, ?MDB_RECORD_DELETED, WriteVersion));
+						WriteVersion = mdb_hlc:timestamp(),
+						?catcher(mdb_mvcc:write_key_value(BI, Key, Version, ?MDB_RECORD_DELETED, WriteVersion));
 					Other -> Other
 				end
 		end).
 
 -spec fold(Fun::fun((Key::term(), Value::term(), Acc::term()) -> Acc1::term()), Acc::term(), Bucket::atom()) -> {ok, Acc1::term()} | {error, Reason::term()}.
 fold(Fun, Acc, Bucket) when is_function(Fun, 4), is_atom(Bucket) -> 
-	with_bucket(Bucket, fun(BI) -> 
-				Acc1 = do_fold(BI, Fun, Acc),
+	mdb_storage:with_bucket(Bucket, fun(BI) -> 
+				Acc1 = mdb_mvcc:fold(BI, Fun, Acc),
 				{ok, Acc1}
 		end).
 
@@ -251,12 +230,12 @@ filter(Fun, Bucket) when is_function(Fun, 2), is_atom(Bucket) ->
 		end, [], Bucket).
 
 delete(Fun, Bucket) when is_function(Fun, 2), is_atom(Bucket) ->
-	WriteVersion = timestamp(),
-	with_bucket(Bucket, fun(BI) -> 
-				Acc1 = do_fold(BI, fun(Key, Value, _Version, Acc) -> 
+	WriteVersion = mdb_hlc:timestamp(),
+	mdb_storage:with_bucket(Bucket, fun(BI) -> 
+				Acc1 = mdb_mvcc:fold(BI, fun(Key, Value, _Version, Acc) -> 
 								case Fun(Key, Value) of
 									true -> 
-										write_key_value(BI, Key, ?MDB_VERSION_LAST, ?MDB_RECORD_DELETED, WriteVersion),
+										mdb_mvcc:write_key_value(BI, Key, ?MDB_VERSION_LAST, ?MDB_RECORD_DELETED, WriteVersion),
 										Acc + 1;
 									false -> Acc
 								end
@@ -265,12 +244,12 @@ delete(Fun, Bucket) when is_function(Fun, 2), is_atom(Bucket) ->
 		end).
 
 update(Fun, Bucket) when is_function(Fun, 2), is_atom(Bucket) ->
-	WriteVersion = timestamp(),
-	with_bucket(Bucket, fun(BI) -> 
-				Acc1 = do_fold(BI, fun(Key, Value, _Version, Acc) -> 
+	WriteVersion = mdb_hlc:timestamp(),
+	mdb_storage:with_bucket(Bucket, fun(BI) -> 
+				Acc1 = mdb_mvcc:fold(BI, fun(Key, Value, _Version, Acc) -> 
 								case Fun(Key, Value) of
 									{true, NewValue} -> 
-										write_key_value(BI, Key, ?MDB_VERSION_LAST, NewValue, WriteVersion),
+										mdb_mvcc:write_key_value(BI, Key, ?MDB_VERSION_LAST, NewValue, WriteVersion),
 										Acc + 1;
 									false -> Acc
 								end
@@ -286,7 +265,7 @@ update(Fun, Bucket) when is_function(Fun, 2), is_atom(Bucket) ->
 %% init/1
 init([]) ->
 	error_logger:info_msg("~p starting on [~p]...\n", [?MODULE, self()]),
-	ets:new(?MDB_STORAGE, [set, public, named_table, {read_concurrency, true}, {keypos, 2}]),
+	mdb_storage:create(),
 	{ok, Timer} = timer:send_interval(?MDB_DB_CLEAN_INTERVAL, {run_db_clean}),
 	{ok, #state{timer_ref=Timer}}.
 
@@ -300,17 +279,14 @@ handle_cast(_Msg, State) ->
 
 %% handle_info/2
 handle_info({run_db_clean}, State) ->
-	db_clean(),
+	mdb_mvcc:clean(),
 	{noreply, State};
 handle_info(_Info, State) ->
 	{noreply, State}.
 
 %% terminate/2
 terminate(_Reason, #state{timer_ref=Timer}) ->
-	ets:foldl(fun(#bucket{ets=TID}, _Acc) -> 
-				ets:delete(TID) 
-		end, 0, ?MDB_STORAGE),
-	ets:delete(?MDB_STORAGE),
+	mdb_storage:drop(),
 	timer:cancel(Timer),
 	ok.
 
@@ -322,147 +298,3 @@ code_change(_OldVsn, State, _Extra) ->
 %% Internal functions
 %% ====================================================================
 
-with_bucket(Bucket, Fun) ->
-	case get_bucket(Bucket) of
-		{ok, BI} -> Fun(BI);
-		Other -> Other
-	end.
-
-get_bucket(Bucket) ->
-	case ets:lookup(?MDB_STORAGE, Bucket) of
-		[] -> {error, bucket_not_found};
-		[BI] -> {ok, BI}
-	end.
-
-db_clean() ->
-	{ok, Threshold} = application:get_env(obsolete_threshold),
-	TS = timestamp(Threshold),
-	ets:foldl(fun(BI=#bucket{ets=TID, options=Options}, _Acc) ->
-				case lists:member(keep_history, Options) of
-					true -> ok;
-					false -> do_clean(BI=#bucket{ets=TID}, TS) 
-				end
-		end, 0, ?MDB_STORAGE).
-
-do_clean(BI=#bucket{ets=TID}) ->
-	{ok, Threshold} = application:get_env(mdb, obsolete_threshold),
-	TS = timestamp(Threshold),
-	do_clean(BI=#bucket{ets=TID}, TS).
-	
-do_clean(BI=#bucket{ets=TID}, TS) ->
-	MatchSpec = [{?MDB_RECORD('$1', '$2', '$3'), [{'<', '$2', TS}], ['$_']}],
-	case ets:select_reverse(TID, MatchSpec, 500) of
-		{Matched, Continuation} -> do_clean(BI, Continuation, '$mdb_no_key', Matched);
-		'$end_of_table' -> ok
-	end. 
-
-do_clean(BI=#bucket{ets=TID}, Continuation, LastKey, [?MDB_RECORD(LastKey, Version, _)|T]) ->
-	ets:delete(TID, ?MDB_PK_RECORD(LastKey, Version)),
-	do_clean(BI, Continuation, LastKey, T);
-do_clean(BI=#bucket{ets=TID}, Continuation, _LastKey, [?MDB_RECORD(Key, Version, ?MDB_RECORD_DELETED)|T]) ->
-	ets:delete(TID, ?MDB_PK_RECORD(Key, Version)),
-	do_clean(BI, Continuation, Key, T);
-do_clean(BI=#bucket{ets=TID}, Continuation, _LastKey, [?MDB_RECORD(Key, Version, _)|T]) ->
-	PK = ?MDB_PK_RECORD(Key, Version),
-	case is_last_version(BI, PK) of
-		true -> ok;
-		false -> ets:delete(TID, PK)
-	end,
-	do_clean(BI, Continuation, Key, T);
-do_clean(BI, Continuation, LastKey, []) ->
-	case ets:select_reverse(Continuation) of
-		{Matched, Continuation1} -> do_clean(BI, Continuation1, LastKey, Matched);
-		'$end_of_table' -> ok
-	end.
-
-timestamp(Seconds) ->
-	MS = Seconds * 1000000,
-	timestamp() - MS.
-
-timestamp() ->
-	TS = {_,_, Micro} = os:timestamp(),
-	Utc = calendar:now_to_universal_time(TS),
-	Seconds = calendar:datetime_to_gregorian_seconds(Utc),
-	((Seconds - 62167219200) * 1000000) + Micro. 
-
-get_value(BI, Key, Version) ->
-	PK = get_last_version(BI, Key, Version),
-	get_value(BI, PK).
-
-get_value(_, ?MDB_KEY_NOT_FOUND) -> {error, key_not_found};
-get_value(#bucket{ets=TID}, PK=?MDB_PK_RECORD(_Key, _Version)) ->
-	case ets:lookup(TID, PK) of
-		[] -> {error, version_not_found};
-		[?MDB_RECORD(_Key, _Version, ?MDB_RECORD_DELETED)] -> {error, deleted};
-		[?MDB_RECORD(_Key, Version, Value)] -> {ok, Value, Version}
-	end;
-get_value(#bucket{ets=TID}, Key) ->
-	get_value(#bucket{ets=TID}, Key, ?MDB_VERSION_LAST).
-
-get_last_version(#bucket{ets=TID}, Key, Version) ->
-	FixedVersion = fix_search_version(Version),
-	case ets:prev(TID, ?MDB_PK_RECORD(Key, FixedVersion)) of
-		'$end_of_table' -> ?MDB_KEY_NOT_FOUND;
-		Last = ?MDB_PK_RECORD(Key, _) -> Last;
-		_ -> ?MDB_KEY_NOT_FOUND
-	end.
-
-fix_search_version(?MDB_VERSION_LAST) -> ?MDB_VERSION_LAST;
-fix_search_version(Version) -> Version + 0.1.
-
-versions(#bucket{ets=TID}, Key) ->
-	versions(TID, ?MDB_PK_RECORD(Key, ?MDB_VERSION_LAST), []).
-
-versions(TID, PK=?MDB_PK_RECORD(Key, _), Acc) ->
-	case ets:prev(TID, PK) of
-		'$end_of_table' when length(Acc) =:= 0 -> ?MDB_KEY_NOT_FOUND;
-		'$end_of_table' -> Acc;
-		Prev = ?MDB_PK_RECORD(Key, Version) -> versions(TID, Prev, [Version|Acc]);
-		_ when length(Acc) =:= 0 -> ?MDB_KEY_NOT_FOUND;
-		_ -> Acc
-	end.	
-
-is_last_version(#bucket{ets=TID}, PK=?MDB_PK_RECORD(Key, _)) ->
-	case ets:next(TID, PK) of
-		'$end_of_table' -> true;
-		?MDB_PK_RECORD(Key, _) -> false;
-		_ -> true
-	end.
-
-write_key_value(BI=#bucket{ets=TID}, Key, ReadVersion, Value, WriteVersion) ->
-	validate_read_version(BI, Key, ReadVersion),
-	ets:insert(TID, ?MDB_RECORD(Key, WriteVersion, Value)),
-	{ok, WriteVersion}.
-
-validate_read_version(_BI, _Key, ?MDB_VERSION_LAST) -> ok;
-validate_read_version(BI, Key, Version) ->
-	case is_last_version(BI, ?MDB_PK_RECORD(Key, Version)) of
-		true -> ok;
-		false -> system_abort(not_last_version)
-	end.
-
-system_abort(Reason) -> throw({system_abort, Reason}).
-
-do_fold(BI, Fun, Acc) ->
-	ReadVersion = timestamp(),
-	do_fold(BI, Fun, Acc, ReadVersion).
-
-do_fold(#bucket{ets=TID}, Fun, Acc, Version) ->
-	MatchSpec = [{?MDB_RECORD('$1', '$2', '$3'), [{'<', '$2', Version}], ['$_']}],
-	case ets:select_reverse(TID, MatchSpec, 500) of
-		{Matched, Continuation} -> do_fold(TID, Fun, Acc, Continuation, '$mdb_no_key', Matched);
-		'$end_of_table' -> Acc
-	end.
-
-do_fold(TID, Fun, Acc, Continuation, LastKey, [?MDB_RECORD(LastKey, _, _)|T]) ->
-	do_fold(TID, Fun, Acc, Continuation, LastKey, T);
-do_fold(TID, Fun, Acc, Continuation, _LastKey, [?MDB_RECORD(Key, _, ?MDB_RECORD_DELETED)|T]) ->
-	do_fold(TID, Fun, Acc, Continuation, Key, T);
-do_fold(TID, Fun, Acc, Continuation, _LastKey, [?MDB_RECORD(Key, Version, Value)|T]) ->
-	Acc1 = Fun(Key, Value, Version, Acc),
-	do_fold(TID, Fun, Acc1, Continuation, Key, T);
-do_fold(TID, Fun, Acc, Continuation, LastKey, []) ->
-	case ets:select_reverse(Continuation) of
-		{Matched, Continuation1} -> do_fold(TID, Fun, Acc, Continuation1, LastKey, Matched);
-		'$end_of_table' -> Acc
-	end.
