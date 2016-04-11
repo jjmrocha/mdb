@@ -67,8 +67,8 @@ drop(Bucket) when is_atom(Bucket) ->
 	mdb_storage:drop(Bucket).
 
 delete(Bucket) when is_atom(Bucket) ->	
-	WriteVersion = mdb_hlc:timestamp(),
-	mdb_storage:with_bucket(Bucket, fun(BI) -> 
+	mdb_storage:with_bucket(Bucket, fun(BI) ->
+				WriteVersion = mdb_hlc:timestamp(),
 				Acc1 = mdb_mvcc:fold(BI, fun(Key, _Value, _Version, Acc) -> 
 								mdb_mvcc:update_value(BI, Key, ?MDB_RECORD_DELETED, WriteVersion, ?MDB_VERSION_LAST),
 								Acc + 1
@@ -115,8 +115,8 @@ to_list(Bucket) when is_atom(Bucket) ->
 %%	bucket_not_found - If the bucket doesn't exists
 -spec from_list(Bucket::atom(), KeyValueList::list()) -> ok | {error, Reason::term()}.
 from_list(Bucket, KeyValueList) when is_atom(Bucket), is_list(KeyValueList) -> 
-	WriteVersion = mdb_hlc:timestamp(),
 	mdb_storage:with_bucket(Bucket, fun(BI) -> 
+				WriteVersion = mdb_hlc:timestamp(),
 				lists:foreach(fun({Key, Value}) ->
 							mdb_mvcc:update_value(BI, Key, Value, WriteVersion, ?MDB_VERSION_LAST)
 					end, KeyValueList)
@@ -233,8 +233,8 @@ filter(Fun, Bucket) when is_function(Fun, 2), is_atom(Bucket) ->
 		end, [], Bucket).
 
 delete(Fun, Bucket) when is_function(Fun, 2), is_atom(Bucket) ->
-	WriteVersion = mdb_hlc:timestamp(),
 	mdb_storage:with_bucket(Bucket, fun(BI) -> 
+				WriteVersion = mdb_hlc:timestamp(),
 				Acc1 = mdb_mvcc:fold(BI, fun(Key, Value, _Version, Acc) -> 
 								case Fun(Key, Value) of
 									true -> 
@@ -247,8 +247,8 @@ delete(Fun, Bucket) when is_function(Fun, 2), is_atom(Bucket) ->
 		end).
 
 update(Fun, Bucket) when is_function(Fun, 2), is_atom(Bucket) ->
-	WriteVersion = mdb_hlc:timestamp(),
 	mdb_storage:with_bucket(Bucket, fun(BI) -> 
+				WriteVersion = mdb_hlc:timestamp(),
 				Acc1 = mdb_mvcc:fold(BI, fun(Key, Value, _Version, Acc) -> 
 								case Fun(Key, Value) of
 									{true, NewValue} -> 
