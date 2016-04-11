@@ -115,6 +115,13 @@ to_list(Bucket) when is_atom(Bucket) ->
 %%	bucket_not_found - If the bucket doesn't exists
 -spec from_list(Bucket::atom(), KeyValueList::list()) -> ok | {error, Reason::term()}.
 from_list(Bucket, KeyValueList) when is_atom(Bucket), is_list(KeyValueList) -> 
+	WriteVersion = mdb_hlc:timestamp(),
+	mdb_storage:with_bucket(Bucket, fun(BI) -> 
+				lists:foreach(fun({Key, Value}) ->
+							mdb_mvcc:update_value(BI, Key, Value, WriteVersion, ?MDB_VERSION_LAST)
+					end, KeyValueList)
+		end).
+		
 	lists:foreach(fun({Key, Value}) ->
 				put(Bucket, Key, Value)
 		end, KeyValueList).
