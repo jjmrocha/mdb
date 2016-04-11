@@ -27,7 +27,11 @@
 	]},
 	{mod, {mdb_app, []}},
 	{env, [
+		% Interval in seconds between purges
+		{obsolete_purge_interval, 60},
+		% Threshold in seconds to consider the version obsolete by the purge process
 		{obsolete_threshold, 60},
+		% Buckets to create on start
 		{buckets, []}
 	]}
 ]}.
