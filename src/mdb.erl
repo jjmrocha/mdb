@@ -70,7 +70,7 @@ delete(Bucket) when is_atom(Bucket) ->
 	WriteVersion = mdb_hlc:timestamp(),
 	mdb_storage:with_bucket(Bucket, fun(BI) -> 
 				Acc1 = mdb_mvcc:fold(BI, fun(Key, _Value, _Version, Acc) -> 
-								mdb_mvcc:write_key_value(BI, Key, ?MDB_VERSION_LAST, ?MDB_RECORD_DELETED, WriteVersion),
+								mdb_mvcc:update_value(BI, Key, ?MDB_RECORD_DELETED, WriteVersion, ?MDB_VERSION_LAST),
 								Acc + 1
 						end, 0),
 				{ok, Acc1}
@@ -190,7 +190,7 @@ put(Bucket, Key, Value) when is_atom(Bucket) ->
 put(Bucket, Key, Value, ReadVersion) when is_atom(Bucket) ->
 	mdb_storage:with_bucket(Bucket, fun(BI) ->
 				WriteVersion = mdb_hlc:timestamp(),
-				?catcher(mdb_mvcc:write_key_value(BI, Key, ReadVersion, Value, WriteVersion))
+				?catcher(mdb_mvcc:update_value(BI, Key, Value, WriteVersion, ReadVersion))
 		end).
 
 -spec remove(Bucket::atom(), Key::term()) -> {ok, Version::integer()} | {error, Reason::term()}.
@@ -203,7 +203,7 @@ remove(Bucket, Key, ReadVersion) when is_atom(Bucket) ->
 				case mdb_mvcc:get_value(BI, Key, ReadVersion) of
 					{ok, _Value, Version} ->
 						WriteVersion = mdb_hlc:timestamp(),
-						?catcher(mdb_mvcc:write_key_value(BI, Key, Version, ?MDB_RECORD_DELETED, WriteVersion));
+						?catcher(mdb_mvcc:update_value(BI, Key, ?MDB_RECORD_DELETED, WriteVersion, Version));
 					Other -> Other
 				end
 		end).
@@ -235,7 +235,7 @@ delete(Fun, Bucket) when is_function(Fun, 2), is_atom(Bucket) ->
 				Acc1 = mdb_mvcc:fold(BI, fun(Key, Value, _Version, Acc) -> 
 								case Fun(Key, Value) of
 									true -> 
-										mdb_mvcc:write_key_value(BI, Key, ?MDB_VERSION_LAST, ?MDB_RECORD_DELETED, WriteVersion),
+										mdb_mvcc:update_value(BI, Key, ?MDB_RECORD_DELETED, WriteVersion, ?MDB_VERSION_LAST),
 										Acc + 1;
 									false -> Acc
 								end
@@ -249,7 +249,7 @@ update(Fun, Bucket) when is_function(Fun, 2), is_atom(Bucket) ->
 				Acc1 = mdb_mvcc:fold(BI, fun(Key, Value, _Version, Acc) -> 
 								case Fun(Key, Value) of
 									{true, NewValue} -> 
-										mdb_mvcc:write_key_value(BI, Key, ?MDB_VERSION_LAST, NewValue, WriteVersion),
+										mdb_mvcc:update_value(BI, Key, NewValue, WriteVersion, ?MDB_VERSION_LAST),
 										Acc + 1;
 									false -> Acc
 								end
