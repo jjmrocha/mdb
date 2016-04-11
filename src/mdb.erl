@@ -269,7 +269,8 @@ update(Fun, Bucket) when is_function(Fun, 2), is_atom(Bucket) ->
 init([]) ->
 	error_logger:info_msg("~p starting on [~p]...\n", [?MODULE, self()]),
 	mdb_storage:create(),
-	{ok, Timer} = timer:send_interval(?MDB_DB_CLEAN_INTERVAL, {run_db_clean}),
+	{ok, Interval} = application:get_env(obsolete_purge_interval),
+	{ok, Timer} = timer:send_interval(Interval * 1000, {run_db_clean}),
 	{ok, #state{timer_ref=Timer}}.
 
 %% handle_call/3
