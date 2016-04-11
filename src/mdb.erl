@@ -121,10 +121,6 @@ from_list(Bucket, KeyValueList) when is_atom(Bucket), is_list(KeyValueList) ->
 							mdb_mvcc:update_value(BI, Key, Value, WriteVersion, ?MDB_VERSION_LAST)
 					end, KeyValueList)
 		end).
-		
-	lists:foreach(fun({Key, Value}) ->
-				put(Bucket, Key, Value)
-		end, KeyValueList).
 
 %% @doc Return the (specif version of the) value for a key 
 %% Returns:
