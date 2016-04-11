@@ -23,7 +23,7 @@
 %% ====================================================================
 -export([fold/3, fold/4]).
 -export([clean/0, clean/1]).
--export([write_key_value/5]).
+-export([update_value/5]).
 -export([get_value/2, get_value/3]).
 -export([get_last_version/3, versions/2]).
 
