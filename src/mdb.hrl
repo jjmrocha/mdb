@@ -16,8 +16,6 @@
 
 -record(bucket, {name, ets, options}).
 
--define(MDB_DB_CLEAN_INTERVAL, 60000).
-
 -define(MDB_PK_RECORD(Key, Version), {p, Key, Version}).
 -define(MDB_RECORD(Key, Version, Value), {?MDB_PK_RECORD(Key, Version), Value}).
 
