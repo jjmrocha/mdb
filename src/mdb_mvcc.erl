@@ -23,7 +23,7 @@
 %% ====================================================================
 -export([fold/3, fold/4]).
 -export([clean/0, clean/1]).
--export([update_value/5]).
+-export([update_value/4, update_value/5, remove_value/3, remove_value/4]).
 -export([get_value/2, get_value/3]).
 -export([get_last_version/3, versions/2]).
 
@@ -95,6 +95,15 @@ clean(BI, Continuation, LastKey, []) ->
 	end.	
 
 % ---------- UPDATE ----------
+remove_value(BI, Key, WriteVersion) ->
+	update_value(BI, Key, ?MDB_RECORD_DELETED, WriteVersion, ?MDB_VERSION_LAST).
+	
+remove_value(BI, Key, WriteVersion, ReadVersion) ->
+	update_value(BI, Key, ?MDB_RECORD_DELETED, WriteVersion, ReadVersion).
+
+update_value(BI, Key, Value, WriteVersion) ->
+	update_value(BI, Key, Value, WriteVersion, ?MDB_VERSION_LAST).
+
 update_value(BI=#bucket{ets=TID}, Key, Value, WriteVersion, ReadVersion) ->
 	validate_read_version(BI, Key, ReadVersion),
 	ets:insert(TID, ?MDB_RECORD(Key, WriteVersion, Value)),
