@@ -72,7 +72,7 @@ delete(Bucket) when is_atom(Bucket) ->
 	mdb_storage:with_bucket(Bucket, fun(BI) ->
 				WriteVersion = mdb_hlc:timestamp(),
 				Acc1 = mdb_mvcc:fold(BI, fun(Key, _Value, _Version, Acc) -> 
-								mdb_mvcc:update_value(BI, Key, ?MDB_RECORD_DELETED, WriteVersion, ?MDB_VERSION_LAST),
+								mdb_mvcc:remove_value(BI, Key, WriteVersion),
 								Acc + 1
 						end, 0),
 				{ok, Acc1}
@@ -125,7 +125,7 @@ from_list(Bucket, KeyValueList) when is_atom(Bucket), is_list(KeyValueList) ->
 	mdb_storage:with_bucket(Bucket, fun(BI) -> 
 				WriteVersion = mdb_hlc:timestamp(),
 				lists:foreach(fun({Key, Value}) ->
-							mdb_mvcc:update_value(BI, Key, Value, WriteVersion, ?MDB_VERSION_LAST)
+							mdb_mvcc:update_value(BI, Key, Value, WriteVersion)
 					end, KeyValueList)
 		end);
 from_list(_, _) -> {error, badarg}.
@@ -222,7 +222,7 @@ remove(Bucket, Key, ReadVersion) when is_atom(Bucket) ->
 				case mdb_mvcc:get_value(BI, Key, ReadVersion) of
 					{ok, _Value, Version} ->
 						WriteVersion = mdb_hlc:timestamp(),
-						?catcher(mdb_mvcc:update_value(BI, Key, ?MDB_RECORD_DELETED, WriteVersion, Version));
+						?catcher(mdb_mvcc:remove_value(BI, Key, WriteVersion, Version));
 					Other -> Other
 				end
 		end);
@@ -258,7 +258,7 @@ delete(Fun, Bucket) when is_function(Fun, 2), is_atom(Bucket) ->
 				Acc1 = mdb_mvcc:fold(BI, fun(Key, Value, _Version, Acc) -> 
 								case Fun(Key, Value) of
 									true -> 
-										mdb_mvcc:update_value(BI, Key, ?MDB_RECORD_DELETED, WriteVersion, ?MDB_VERSION_LAST),
+										mdb_mvcc:remove_value(BI, Key, WriteVersion),
 										Acc + 1;
 									false -> Acc
 								end
@@ -273,7 +273,7 @@ update(Fun, Bucket) when is_function(Fun, 2), is_atom(Bucket) ->
 				Acc1 = mdb_mvcc:fold(BI, fun(Key, Value, _Version, Acc) -> 
 								case Fun(Key, Value) of
 									{true, NewValue} -> 
-										mdb_mvcc:update_value(BI, Key, NewValue, WriteVersion, ?MDB_VERSION_LAST),
+										mdb_mvcc:update_value(BI, Key, NewValue, WriteVersion),
 										Acc + 1;
 									false -> Acc
 								end
