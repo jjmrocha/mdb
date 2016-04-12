@@ -118,7 +118,10 @@ validate_read_version(BI, Key, Version) ->
 		false -> system_abort(not_last_version)
 	end.
 	
-post_update(_BI, _Record) -> ok.
+post_update(_BI, _Record) -> 
+	mdb_async:run(fun() ->
+			ok
+		end).
 
 % ---------- GET ----------
 get_value(BI, Key, Version) ->
