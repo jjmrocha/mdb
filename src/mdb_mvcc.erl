@@ -106,7 +106,9 @@ update_value(BI, Key, Value, WriteVersion) ->
 
 update_value(BI=#bucket{ets=TID}, Key, Value, WriteVersion, ReadVersion) ->
 	validate_read_version(BI, Key, ReadVersion),
-	ets:insert(TID, ?MDB_RECORD(Key, WriteVersion, Value)),
+	Record = ?MDB_RECORD(Key, WriteVersion, Value),
+	ets:insert(TID, Record),
+	post_update(Record),
 	{ok, WriteVersion}.
 	
 validate_read_version(_BI, _Key, ?MDB_VERSION_LAST) -> ok;
@@ -115,6 +117,8 @@ validate_read_version(BI, Key, Version) ->
 		true -> ok;
 		false -> system_abort(not_last_version)
 	end.
+	
+post_update(_Record) -> ok
 
 % ---------- GET ----------
 get_value(BI, Key, Version) ->
