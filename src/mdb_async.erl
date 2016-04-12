@@ -19,7 +19,7 @@
 -export([run/1]).
 
 run(Fun) ->
-  async:run(mdb_async, Fun).
+        async:run(mdb_async, Fun).
   
 %% ====================================================================
 %% Internal functions
