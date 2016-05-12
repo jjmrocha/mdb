@@ -23,10 +23,11 @@
 %% ====================================================================
 -export([fold/3, fold/4]).
 -export([clean/0, clean/1]).
--export([write_key_value/5]).
+-export([update_value/4, update_value/5, remove_value/3, remove_value/4]).
 -export([get_value/2, get_value/3]).
 -export([get_last_version/3, versions/2]).
 
+% ---------- FOLD ----------
 fold(BI, Fun, Acc) ->
 	ReadVersion = mdb_hlc:timestamp(),
 	fold(BI, Fun, Acc, ReadVersion).
@@ -37,55 +38,6 @@ fold(#bucket{ets=TID}, Fun, Acc, Version) ->
 		{Matched, Continuation} -> fold(TID, Fun, Acc, Continuation, '$mdb_no_key', Matched);
 		'$end_of_table' -> Acc
 	end.
-
-clean() ->
-	{ok, Threshold} = application:get_env(obsolete_threshold),
-	TS = mdb_hlc:timestamp(Threshold),
-	mdb_storage:fold(fun(BI=#bucket{options=Options}, _Acc) ->
-				case lists:member(keep_history, Options) of
-					true -> ok;
-					false -> clean(BI, TS) 
-				end
-		end, 0).
-
-clean(BI) ->
-	{ok, Threshold} = application:get_env(mdb, obsolete_threshold),
-	TS = mdb_hlc:timestamp(Threshold),
-	clean(BI, TS).
-
-write_key_value(BI=#bucket{ets=TID}, Key, ReadVersion, Value, WriteVersion) ->
-	validate_read_version(BI, Key, ReadVersion),
-	ets:insert(TID, ?MDB_RECORD(Key, WriteVersion, Value)),
-	{ok, WriteVersion}.
-
-get_value(BI, Key, Version) ->
-	PK = get_last_version(BI, Key, Version),
-	get_value(BI, PK).
-
-get_value(_, ?MDB_KEY_NOT_FOUND) -> {error, key_not_found};
-get_value(#bucket{ets=TID}, PK=?MDB_PK_RECORD(_Key, _Version)) ->
-	case ets:lookup(TID, PK) of
-		[] -> {error, version_not_found};
-		[?MDB_RECORD(_Key, _Version, ?MDB_RECORD_DELETED)] -> {error, deleted};
-		[?MDB_RECORD(_Key, Version, Value)] -> {ok, Value, Version}
-	end;
-get_value(#bucket{ets=TID}, Key) ->
-	get_value(#bucket{ets=TID}, Key, ?MDB_VERSION_LAST).
-
-get_last_version(#bucket{ets=TID}, Key, Version) ->
-	FixedVersion = fix_search_version(Version),
-	case ets:prev(TID, ?MDB_PK_RECORD(Key, FixedVersion)) of
-		'$end_of_table' -> ?MDB_KEY_NOT_FOUND;
-		Last = ?MDB_PK_RECORD(Key, _) -> Last;
-		_ -> ?MDB_KEY_NOT_FOUND
-	end.
-
-versions(#bucket{ets=TID}, Key) ->
-	versions(TID, ?MDB_PK_RECORD(Key, ?MDB_VERSION_LAST), []).
-
-%% ====================================================================
-%% Internal functions
-%% ====================================================================
 
 fold(TID, Fun, Acc, Continuation, LastKey, [?MDB_RECORD(LastKey, _, _)|T]) ->
 	fold(TID, Fun, Acc, Continuation, LastKey, T);
@@ -100,6 +52,22 @@ fold(TID, Fun, Acc, Continuation, LastKey, []) ->
 		'$end_of_table' -> Acc
 	end.
 
+% ---------- CLEAN ----------
+clean() ->
+	{ok, Threshold} = application:get_env(mdb, obsolete_threshold),
+	TS = mdb_hlc:timestamp(Threshold),
+	mdb_storage:fold(fun(BI=#bucket{options=Options}, _Acc) ->
+				case lists:member(keep_history, Options) of
+					true -> ok;
+					false -> clean(BI, TS) 
+				end
+		end, 0).
+
+clean(BI) ->
+	{ok, Threshold} = application:get_env(mdb, obsolete_threshold),
+	TS = mdb_hlc:timestamp(Threshold),
+	clean(BI, TS).
+	
 clean(BI=#bucket{ets=TID}, TS) ->
 	MatchSpec = [{?MDB_RECORD('$1', '$2', '$3'), [{'<', '$2', TS}], ['$_']}],
 	case ets:select_reverse(TID, MatchSpec, 500) of
@@ -124,13 +92,56 @@ clean(BI, Continuation, LastKey, []) ->
 	case ets:select_reverse(Continuation) of
 		{Matched, Continuation1} -> clean(BI, Continuation1, LastKey, Matched);
 		'$end_of_table' -> ok
+	end.	
+
+% ---------- UPDATE ----------
+remove_value(BI, Key, WriteVersion) ->
+	update_value(BI, Key, ?MDB_RECORD_DELETED, WriteVersion, ?MDB_VERSION_LAST).
+	
+remove_value(BI, Key, WriteVersion, ReadVersion) ->
+	update_value(BI, Key, ?MDB_RECORD_DELETED, WriteVersion, ReadVersion).
+
+update_value(BI, Key, Value, WriteVersion) ->
+	update_value(BI, Key, Value, WriteVersion, ?MDB_VERSION_LAST).
+
+update_value(BI=#bucket{ets=TID}, Key, Value, WriteVersion, ReadVersion) ->
+	validate_read_version(BI, Key, ReadVersion),
+	Record = ?MDB_RECORD(Key, WriteVersion, Value),
+	ets:insert(TID, Record),
+	post_update(BI, Record),
+	{ok, WriteVersion}.
+	
+validate_read_version(_BI, _Key, ?MDB_VERSION_LAST) -> ok;
+validate_read_version(BI, Key, Version) ->
+	case is_last_version(BI, ?MDB_PK_RECORD(Key, Version)) of
+		true -> ok;
+		false -> system_abort(not_last_version)
 	end.
+	
+post_update(_BI, _Record) -> 
+	mdb_async:run(fun() ->
+			ok
+		end).
 
-system_abort(Reason) -> throw({system_abort, Reason}).
+% ---------- GET ----------
+get_value(BI, Key, Version) ->
+	PK = get_last_version(BI, Key, Version),
+	get_value(BI, PK).
 
-fix_search_version(?MDB_VERSION_LAST) -> ?MDB_VERSION_LAST;
-fix_search_version(Version) -> Version + 0.1.
+get_value(_, ?MDB_KEY_NOT_FOUND) -> {error, key_not_found};
+get_value(#bucket{ets=TID}, PK=?MDB_PK_RECORD(_Key, _Version)) ->
+	case ets:lookup(TID, PK) of
+		[] -> {error, version_not_found};
+		[?MDB_RECORD(_Key, _Version, ?MDB_RECORD_DELETED)] -> {error, deleted};
+		[?MDB_RECORD(_Key, Version, Value)] -> {ok, Value, Version}
+	end;
+get_value(#bucket{ets=TID}, Key) ->
+	get_value(#bucket{ets=TID}, Key, ?MDB_VERSION_LAST).
 
+% ---------- VERSIONS ----------
+versions(#bucket{ets=TID}, Key) ->
+	versions(TID, ?MDB_PK_RECORD(Key, ?MDB_VERSION_LAST), []).
+	
 versions(TID, PK=?MDB_PK_RECORD(Key, _), Acc) ->
 	case ets:prev(TID, PK) of
 		'$end_of_table' when length(Acc) =:= 0 -> ?MDB_KEY_NOT_FOUND;
@@ -138,7 +149,22 @@ versions(TID, PK=?MDB_PK_RECORD(Key, _), Acc) ->
 		Prev = ?MDB_PK_RECORD(Key, Version) -> versions(TID, Prev, [Version|Acc]);
 		_ when length(Acc) =:= 0 -> ?MDB_KEY_NOT_FOUND;
 		_ -> Acc
-	end.	
+	end.
+
+get_last_version(#bucket{ets=TID}, Key, Version) ->
+	FixedVersion = fix_search_version(Version),
+	case ets:prev(TID, ?MDB_PK_RECORD(Key, FixedVersion)) of
+		'$end_of_table' -> ?MDB_KEY_NOT_FOUND;
+		Last = ?MDB_PK_RECORD(Key, _) -> Last;
+		_ -> ?MDB_KEY_NOT_FOUND
+	end.
+	
+fix_search_version(?MDB_VERSION_LAST) -> ?MDB_VERSION_LAST;
+fix_search_version(Version) -> Version + 0.1.
+
+%% ====================================================================
+%% Internal functions
+%% ====================================================================
 
 is_last_version(#bucket{ets=TID}, PK=?MDB_PK_RECORD(Key, _)) ->
 	case ets:next(TID, PK) of
@@ -147,9 +173,4 @@ is_last_version(#bucket{ets=TID}, PK=?MDB_PK_RECORD(Key, _)) ->
 		_ -> true
 	end.
 
-validate_read_version(_BI, _Key, ?MDB_VERSION_LAST) -> ok;
-validate_read_version(BI, Key, Version) ->
-	case is_last_version(BI, ?MDB_PK_RECORD(Key, Version)) of
-		true -> ok;
-		false -> system_abort(not_last_version)
-	end.
+system_abort(Reason) -> throw({system_abort, Reason}).

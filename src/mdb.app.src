@@ -19,16 +19,28 @@
 	{vsn, "0.5.0"},
 	{modules, [
 	]},
+<<<<<<< HEAD
 	{registered, [ 
 		mdb_hlc
+=======
+	{registered, [
+		mdb_async
+>>>>>>> 9faa62c79653d44889be424709ada1e331bf7727
 	]},
 	{applications, [
 		kernel, 
-		stdlib
+		stdlib,
+		async
 	]},
 	{mod, {mdb_app, []}},
 	{env, [
+		% Interval in seconds between purges
+		{obsolete_purge_interval, 120},
+		% Threshold in seconds to consider the version obsolete by the purge process
 		{obsolete_threshold, 60},
+		% Number of async processes by CPU core
+		{async_processes_by_core, 2},
+		% Buckets to create on start
 		{buckets, []}
 	]}
 ]}.

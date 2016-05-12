@@ -28,8 +28,12 @@
 -export([memory/0, memory/1]).
 -export([with_bucket/2, fold/2]).
 
+% ---------- SCHEMA ----------
 create() ->
-	ets:new(?MDB_STORAGE, [set, public, named_table, {read_concurrency, true}, {keypos, 2}]).
+	case exists_ets(?MDB_STORAGE) of
+		false -> ets:new(?MDB_STORAGE, [set, public, named_table, {read_concurrency, true}, {keypos, 2}]);
+		true -> ok
+	end.
 
 drop() ->
 	ets:foldl(fun(#bucket{ets=TID}, _Acc) -> 
@@ -37,6 +41,7 @@ drop() ->
 		end, 0, ?MDB_STORAGE),
 	ets:delete(?MDB_STORAGE).
 
+% ---------- BUCKETS ----------
 create(Bucket, Options) -> 
 	case get_bucket(Bucket) of
 		{ok, _} -> {error, bucket_already_exists};
@@ -55,6 +60,7 @@ drop(Bucket) ->
 		Other -> Other
 	end.
 
+% ---------- MEMORY/INFO ----------
 memory() -> 
 	Master = ets:info(?MDB_STORAGE, memory),
 	ets:foldl(fun(#bucket{ets=TID}, Acc) -> 
@@ -69,6 +75,7 @@ memory(Bucket) ->
 		Other -> Other
 	end.
 
+% ---------- UTILS ----------
 with_bucket(Bucket, Fun) ->
 	case get_bucket(Bucket) of
 		{ok, BI} -> Fun(BI);
@@ -86,4 +93,10 @@ get_bucket(Bucket) ->
 	case ets:lookup(?MDB_STORAGE, Bucket) of
 		[] -> {error, bucket_not_found};
 		[BI] -> {ok, BI}
+	end.
+
+exists_ets(TID) ->
+	case ets:info(TID) of
+		undefined -> false;
+		_ -> true
 	end.

@@ -57,24 +57,27 @@ buckets() ->
 %% 	bucket_already_exists - If the bucket already exists 
 -spec create(Bucket::atom(), Options::list()) -> ok | {error, Reason::term()}.
 create(Bucket, Options) when is_atom(Bucket), is_list(Options) -> 
-	mdb_storage:create(Bucket, Options).
+	mdb_storage:create(Bucket, Options);
+create(_, _) -> {error, badarg}.
 
 %% @doc Drops the buckets
 %% Reasons:
 %%	bucket_not_found - If the bucket doesn't exists
 -spec drop(Bucket::atom()) -> ok | {error, Reason::term()}.
 drop(Bucket) when is_atom(Bucket) -> 
-	mdb_storage:drop(Bucket).
+	mdb_storage:drop(Bucket);
+drop(_) -> {error, badarg}.
 
 delete(Bucket) when is_atom(Bucket) ->	
-	WriteVersion = mdb_hlc:timestamp(),
-	mdb_storage:with_bucket(Bucket, fun(BI) -> 
+	mdb_storage:with_bucket(Bucket, fun(BI) ->
+				WriteVersion = mdb_hlc:timestamp(),
 				Acc1 = mdb_mvcc:fold(BI, fun(Key, _Value, _Version, Acc) -> 
-								mdb_mvcc:write_key_value(BI, Key, ?MDB_VERSION_LAST, ?MDB_RECORD_DELETED, WriteVersion),
+								mdb_mvcc:remove_value(BI, Key, WriteVersion),
 								Acc + 1
 						end, 0),
 				{ok, Acc1}
-		end).
+		end);
+delete(_) -> {error, badarg}.
 
 %% @doc Returs the number of keys on the bucket
 %% Returns:
@@ -83,7 +86,8 @@ delete(Bucket) when is_atom(Bucket) ->
 size(Bucket) when is_atom(Bucket) -> 
 	fold(fun(_Key, _Value, _Version, Acc) -> 
 				Acc + 1 
-		end, 0, Bucket).
+		end, 0, Bucket);
+size(_) -> {error, badarg}.
 
 %% @doc Returs the list of keys on the bucket
 %% Returns:
@@ -92,14 +96,16 @@ size(Bucket) when is_atom(Bucket) ->
 keys(Bucket) when is_atom(Bucket) -> 
 	fold(fun(Key, _Value, _Version, Acc) -> 
 				[Key|Acc] 
-		end, [], Bucket).
+		end, [], Bucket);
+keys(_) -> {error, badarg}.
 
 %% @doc Returs the memory used by the bucket
 %% Returns:
 %%	bucket_not_found - If the bucket doesn't exists
 -spec memory(Bucket::atom()) -> {ok, Size::integer()} | {error, Reason::term()}.
 memory(Bucket) when is_atom(Bucket) -> 
-	mdb_storage:memory(Bucket).
+	mdb_storage:memory(Bucket);
+memory(_) -> {error, badarg}.
 
 %% @doc Returs the Key/Value par from the bucket
 %% Returns:
@@ -108,16 +114,21 @@ memory(Bucket) when is_atom(Bucket) ->
 to_list(Bucket) when is_atom(Bucket) ->
 	fold(fun(Key, Value, _Version, Acc) -> 
 				[{Key, Value}|Acc] 
-		end, [], Bucket).
+		end, [], Bucket);
+to_list(_) -> {error, badarg}.
 
 %% @doc Loads the Key/Value tuple list into the bucket
 %% Returns:
 %%	bucket_not_found - If the bucket doesn't exists
 -spec from_list(Bucket::atom(), KeyValueList::list()) -> ok | {error, Reason::term()}.
 from_list(Bucket, KeyValueList) when is_atom(Bucket), is_list(KeyValueList) -> 
-	lists:foreach(fun({Key, Value}) ->
-				put(Bucket, Key, Value)
-		end, KeyValueList).
+	mdb_storage:with_bucket(Bucket, fun(BI) -> 
+				WriteVersion = mdb_hlc:timestamp(),
+				lists:foreach(fun({Key, Value}) ->
+							mdb_mvcc:update_value(BI, Key, Value, WriteVersion)
+					end, KeyValueList)
+		end);
+from_list(_, _) -> {error, badarg}.
 
 %% @doc Return the (specif version of the) value for a key 
 %% Returns:
@@ -134,7 +145,8 @@ get(Bucket, Key, Version) when is_atom(Bucket), is_integer(Version) ->
 					{ok, _Value, _Version} -> {error, version_not_found};
 					Other -> Other
 				end
-		end).
+		end);
+get(_, _, _) -> {error, badarg}.
 
 %% @doc Return the value (and version) for a key 
 %% Returns:
@@ -148,7 +160,8 @@ get(Bucket, Key) when is_atom(Bucket) ->
 					{error, deleted} -> {error, key_not_found};
 					Other -> Other
 				end
-		end).
+		end);
+get(_, _) -> {error, badarg}.
 
 %% @doc Return the current version for a key 
 %% Returns:
@@ -161,7 +174,8 @@ version(Bucket, Key) when is_atom(Bucket) ->
 					?MDB_KEY_NOT_FOUND -> {error, key_not_found};
 					?MDB_PK_RECORD(_Key, Version) -> {ok, Version}		
 				end
-		end).
+		end);
+version(_, _) -> {error, badarg}.
 
 %% @doc Return the list of versions for a key 
 %% Returns:
@@ -174,28 +188,33 @@ history(Bucket, Key) when is_atom(Bucket) ->
 					?MDB_KEY_NOT_FOUND -> {error, key_not_found};
 					Versions -> {ok, Versions}
 				end
-		end).
+		end);
+history(_, _) -> {error, badarg}.
 
 -spec purge(Bucket::atom()) -> ok | {error, Reason::term()}.	
 purge(Bucket) when is_atom(Bucket) -> 
 	mdb_storage:with_bucket(Bucket, fun(BI) -> 
 				mdb_mvcc:clean(BI)
-		end).
+		end);
+purge(_) -> {error, badarg}.
 
 -spec put(Bucket::atom(), Key::term(), Value::term()) -> {ok, Version::integer()} | {error, Reason::term()}.
 put(Bucket, Key, Value) when is_atom(Bucket) ->
-	put(Bucket, Key, Value, ?MDB_VERSION_LAST).
+	put(Bucket, Key, Value, ?MDB_VERSION_LAST);
+put(_, _, _) -> {error, badarg}.
 
 -spec put(Bucket::atom(), Key::term(), Value::term(), ReadVersion::integer()) -> {ok, Version::integer()} | {error, Reason::term()}.
 put(Bucket, Key, Value, ReadVersion) when is_atom(Bucket) ->
 	mdb_storage:with_bucket(Bucket, fun(BI) ->
 				WriteVersion = mdb_hlc:timestamp(),
-				?catcher(mdb_mvcc:write_key_value(BI, Key, ReadVersion, Value, WriteVersion))
-		end).
+				?catcher(mdb_mvcc:update_value(BI, Key, Value, WriteVersion, ReadVersion))
+		end);
+put(_, _, _, _) -> {error, badarg}.
 
 -spec remove(Bucket::atom(), Key::term()) -> {ok, Version::integer()} | {error, Reason::term()}.
 remove(Bucket, Key) when is_atom(Bucket) -> 
-	remove(Bucket, Key, ?MDB_VERSION_LAST).
+	remove(Bucket, Key, ?MDB_VERSION_LAST);
+remove(_, _) -> {error, badarg}.
 
 -spec remove(Bucket::atom(), Key::term(), ReadVersion::integer()) -> {ok, Version::integer()} | {error, Reason::term()}.
 remove(Bucket, Key, ReadVersion) when is_atom(Bucket) -> 
@@ -203,23 +222,26 @@ remove(Bucket, Key, ReadVersion) when is_atom(Bucket) ->
 				case mdb_mvcc:get_value(BI, Key, ReadVersion) of
 					{ok, _Value, Version} ->
 						WriteVersion = mdb_hlc:timestamp(),
-						?catcher(mdb_mvcc:write_key_value(BI, Key, Version, ?MDB_RECORD_DELETED, WriteVersion));
+						?catcher(mdb_mvcc:remove_value(BI, Key, WriteVersion, Version));
 					Other -> Other
 				end
-		end).
+		end);
+remove(_, _, _) -> {error, badarg}.
 
 -spec fold(Fun::fun((Key::term(), Value::term(), Acc::term()) -> Acc1::term()), Acc::term(), Bucket::atom()) -> {ok, Acc1::term()} | {error, Reason::term()}.
 fold(Fun, Acc, Bucket) when is_function(Fun, 4), is_atom(Bucket) -> 
 	mdb_storage:with_bucket(Bucket, fun(BI) -> 
 				Acc1 = mdb_mvcc:fold(BI, Fun, Acc),
 				{ok, Acc1}
-		end).
+		end);
+fold(_, _, _) -> {error, badarg}.
 
 foreach(Fun, Bucket) when is_function(Fun, 2), is_atom(Bucket) -> 
 	fold(fun(Key, Value, _Version, Acc) -> 
 				Fun(Key, Value),
 				Acc + 1
-		end, 0, Bucket).
+		end, 0, Bucket);
+foreach(_, _) -> {error, badarg}.
 
 filter(Fun, Bucket) when is_function(Fun, 2), is_atom(Bucket) -> 
 	fold(fun(Key, Value, _Version, Acc) -> 
@@ -227,35 +249,38 @@ filter(Fun, Bucket) when is_function(Fun, 2), is_atom(Bucket) ->
 					true -> [{Key, Value}|Acc];
 					false -> Acc
 				end
-		end, [], Bucket).
+		end, [], Bucket);
+filter(_, _) -> {error, badarg}.
 
 delete(Fun, Bucket) when is_function(Fun, 2), is_atom(Bucket) ->
-	WriteVersion = mdb_hlc:timestamp(),
 	mdb_storage:with_bucket(Bucket, fun(BI) -> 
+				WriteVersion = mdb_hlc:timestamp(),
 				Acc1 = mdb_mvcc:fold(BI, fun(Key, Value, _Version, Acc) -> 
 								case Fun(Key, Value) of
 									true -> 
-										mdb_mvcc:write_key_value(BI, Key, ?MDB_VERSION_LAST, ?MDB_RECORD_DELETED, WriteVersion),
+										mdb_mvcc:remove_value(BI, Key, WriteVersion),
 										Acc + 1;
 									false -> Acc
 								end
 						end, 0),
 				{ok, Acc1}
-		end).
+		end);
+delete(_, _) -> {error, badarg}.
 
 update(Fun, Bucket) when is_function(Fun, 2), is_atom(Bucket) ->
-	WriteVersion = mdb_hlc:timestamp(),
 	mdb_storage:with_bucket(Bucket, fun(BI) -> 
+				WriteVersion = mdb_hlc:timestamp(),
 				Acc1 = mdb_mvcc:fold(BI, fun(Key, Value, _Version, Acc) -> 
 								case Fun(Key, Value) of
 									{true, NewValue} -> 
-										mdb_mvcc:write_key_value(BI, Key, ?MDB_VERSION_LAST, NewValue, WriteVersion),
+										mdb_mvcc:update_value(BI, Key, NewValue, WriteVersion),
 										Acc + 1;
 									false -> Acc
 								end
 						end, 0),
 				{ok, Acc1}
-		end).
+		end);
+update(_, _) -> {error, badarg}.
 
 %% ====================================================================
 %% Behavioural functions
@@ -266,7 +291,8 @@ update(Fun, Bucket) when is_function(Fun, 2), is_atom(Bucket) ->
 init([]) ->
 	error_logger:info_msg("~p starting on [~p]...\n", [?MODULE, self()]),
 	mdb_storage:create(),
-	{ok, Timer} = timer:send_interval(?MDB_DB_CLEAN_INTERVAL, {run_db_clean}),
+	{ok, Interval} = application:get_env(obsolete_purge_interval),
+	{ok, Timer} = timer:send_interval(Interval * 1000, {run_db_clean}),
 	{ok, #state{timer_ref=Timer}}.
 
 %% handle_call/3
