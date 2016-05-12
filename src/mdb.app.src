@@ -19,13 +19,9 @@
 	{vsn, "0.5.0"},
 	{modules, [
 	]},
-<<<<<<< HEAD
 	{registered, [ 
-		mdb_hlc
-=======
-	{registered, [
+		mdb_hlc,
 		mdb_async
->>>>>>> 9faa62c79653d44889be424709ada1e331bf7727
 	]},
 	{applications, [
 		kernel, 
