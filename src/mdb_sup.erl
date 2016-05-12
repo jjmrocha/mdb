@@ -35,7 +35,8 @@ start_link() ->
 %% init/1
 init([]) ->
 	Server = {mdb, {mdb, start_link, []}, permanent, infinity, worker, [mdb]},
-	Procs = [Server],
+	Clock = {mdb_hlc, {mdb_hlc, start_link, []}, permanent, infinity, worker, [mdb_hlc]},
+	Procs = [Server, Clock],
 	{ok, {{one_for_one, 5, 60}, Procs}}.
 
 %% ====================================================================
