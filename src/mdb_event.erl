@@ -17,6 +17,7 @@
 -module(mdb_event).
 
 -include("mdb.hrl").
+-include("mdb_event.hrl").
 
 -export([notify/2]).
 
@@ -24,7 +25,7 @@ notify(#bucket{name=Bucket, options=Options}, Record) ->
 	case lists:member(generate_events, Options) of
 		true -> 
 			Event = create_event(Bucket, Record),
-			event_broker:publish(Event)
+			event_broker:publish(Event);
 		false -> ok 
 	end.
   
@@ -33,10 +34,10 @@ notify(#bucket{name=Bucket, options=Options}, Record) ->
 %% ====================================================================
 
 create_event(Bucket, ?MDB_RECORD(Key, Version, ?MDB_RECORD_DELETED)) ->
-	create_event(<<"mdb:deleted">>, Bucket, Key, Version);
+	create_event(?MDB_EVENT_DELETED, Bucket, Key, Version);
 create_event(Bucket, ?MDB_RECORD(Key, Version, _Value)) ->
-	create_event(<<"mdb:updated">>, Bucket, Key, Version).
+	create_event(?MDB_EVENT_UPDATED, Bucket, Key, Version).
 
 create_event(EventName, Bucket, Key, Version) ->
-	Info = #{key => Key, version => Version},
+	Info = #{?MDB_EVENT_FIELD_KEY => Key, ?MDB_EVENT_FIELD_VERSION => Version},
 	eb_event:new(EventName, Bucket, Info).
