@@ -121,12 +121,9 @@ validate_read_version(BI, Key, Version) ->
 post_update(BI, Record=?MDB_RECORD(Key, Version, _Value)) -> 
 	mdb_async:run(fun() ->
 			PK = ?MDB_PK_RECORD(Key, Version),
-			case is_last_version(BI, PK) of
-				true -> 
-					mdb_event:notify(BI, Record),
-					ok;
-				false -> ok
-			end
+			if_last_version(BI, PK, fun() ->
+					mdb_event:notify(BI, Record)
+				end)
 		end).
 
 % ---------- GET ----------
@@ -180,3 +177,9 @@ is_last_version(#bucket{ets=TID}, PK=?MDB_PK_RECORD(Key, _)) ->
 	end.
 
 system_abort(Reason) -> throw({system_abort, Reason}).
+
+if_last_version(BI, PK, Fun) ->
+	case is_last_version(BI, PK) of
+		true -> Fun();
+		false -> ok
+	end,.
