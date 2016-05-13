@@ -52,6 +52,7 @@ buckets() ->
 %% @doc Creates a new bucket
 %% Options: 
 %%	keep_history - Don't remove old versions
+%%	generate_events - To generate events every time a key is created/updated or deleted
 %%
 %% Reasons:
 %% 	bucket_already_exists - If the bucket already exists 
