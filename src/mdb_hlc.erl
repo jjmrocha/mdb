@@ -18,6 +18,7 @@
 
 -define(FRACTIONS_OF_SECOND, 10000).
 -record(timestamp, {l, c}).
+-define(hlc_timestamp(Logical, Counter), #timestamp{l=Logical, c=Counter}).
 
 -behaviour(gen_server).
 
@@ -65,7 +66,7 @@ handle_call({get_timestamp}, _From, State=#state{last=LastTS}) ->
 		Logical =:= LastTS#timestamp.l -> LastTS#timestamp.c + 1;
 		true -> 0
 	end,
-	Timestamp = hlc_timestamp(Logical, Counter),
+	Timestamp = ?hlc_timestamp(Logical, Counter),
 	{reply, Timestamp, State#state{last=Timestamp}};
 handle_call({update, ExternalTS}, _From, State=#state{last=LastTS}) ->
 	Now = wall_clock(),
@@ -76,7 +77,7 @@ handle_call({update, ExternalTS}, _From, State=#state{last=LastTS}) ->
 		Logical =:= ExternalTS#timestamp.l -> ExternalTS#timestamp.c + 1;
 		true -> 0
 	end,
-	Timestamp = hlc_timestamp(Logical, Counter),
+	Timestamp = ?hlc_timestamp(Logical, Counter),
 	{reply, Timestamp, State#state{last=Timestamp}};
 handle_call(_Msg, _From, State) ->
 	{noreply, State}.
@@ -111,11 +112,7 @@ wall_clock() ->
 	Fraction = Micro div 100,
 	((Seconds - 62167219200) * ?FRACTIONS_OF_SECOND) + Fraction.
 
-hlc_timestamp(Logical, Counter) -> 
-	#timestamp{l=Logical, c=Counter}.
-
-current_timestamp() -> 
-	hlc_timestamp(wall_clock(), 0).
+current_timestamp() -> ?hlc_timestamp(wall_clock(), 0).
 
 encode(#timestamp{l=Logical, c=Counter}) ->
 	<<Time:64>> = <<Logical:48, Counter:16>>,
@@ -123,6 +120,6 @@ encode(#timestamp{l=Logical, c=Counter}) ->
 
 decode(Time) ->
 	<<Logical:48, Counter:16>> = <<Time:64>>,
-	hlc_timestamp(Logical, Counter).
+	?hlc_timestamp(Logical, Counter).
 
 max(A, B, C) -> max(max(A, B), max(B, C)).
