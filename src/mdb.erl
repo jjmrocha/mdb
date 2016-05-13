@@ -28,9 +28,9 @@
 -export([start_link/0]).
 -export([memory/0]).
 -export([buckets/0]).
--export([create/2, drop/1, size/1, keys/1, memory/1, delete/1]).
+-export([create_bucket/2, drop_bucket/1, size/1, keys/1, memory/1, clean/1]).
 -export([to_list/1, from_list/2]).
--export([get/2, get/3, put/3, put/4, remove/2, remove/3]).
+-export([get/2, get/3, set/3, set/4, remove/2, remove/3]).
 -export([version/2, history/2, purge/1]).
 -export([fold/3, foreach/2, filter/2]).
 -export([delete/2, update/2]).
@@ -55,20 +55,20 @@ buckets() ->
 %%
 %% Reasons:
 %% 	bucket_already_exists - If the bucket already exists 
--spec create(Bucket::atom(), Options::list()) -> ok | {error, Reason::term()}.
-create(Bucket, Options) when is_atom(Bucket), is_list(Options) -> 
+-spec create_bucket(Bucket::atom(), Options::list()) -> ok | {error, Reason::term()}.
+create_bucket(Bucket, Options) when is_atom(Bucket), is_list(Options) -> 
 	mdb_storage:create(Bucket, Options);
-create(_, _) -> {error, badarg}.
+create_bucket(_, _) -> {error, badarg}.
 
 %% @doc Drops the buckets
 %% Reasons:
 %%	bucket_not_found - If the bucket doesn't exists
--spec drop(Bucket::atom()) -> ok | {error, Reason::term()}.
-drop(Bucket) when is_atom(Bucket) -> 
+-spec drop_bucket(Bucket::atom()) -> ok | {error, Reason::term()}.
+drop_bucket(Bucket) when is_atom(Bucket) -> 
 	mdb_storage:drop(Bucket);
-drop(_) -> {error, badarg}.
+drop_bucket(_) -> {error, badarg}.
 
-delete(Bucket) when is_atom(Bucket) ->	
+clean(Bucket) when is_atom(Bucket) ->	
 	mdb_storage:with_bucket(Bucket, fun(BI) ->
 				WriteVersion = mdb_hlc:timestamp(),
 				Acc1 = mdb_mvcc:fold(BI, fun(Key, _Value, _Version, Acc) -> 
@@ -77,7 +77,7 @@ delete(Bucket) when is_atom(Bucket) ->
 						end, 0),
 				{ok, Acc1}
 		end);
-delete(_) -> {error, badarg}.
+clean(_) -> {error, badarg}.
 
 %% @doc Returs the number of keys on the bucket
 %% Returns:
@@ -198,18 +198,18 @@ purge(Bucket) when is_atom(Bucket) ->
 		end);
 purge(_) -> {error, badarg}.
 
--spec put(Bucket::atom(), Key::term(), Value::term()) -> {ok, Version::integer()} | {error, Reason::term()}.
-put(Bucket, Key, Value) when is_atom(Bucket) ->
-	put(Bucket, Key, Value, ?MDB_VERSION_LAST);
-put(_, _, _) -> {error, badarg}.
+-spec set(Bucket::atom(), Key::term(), Value::term()) -> {ok, Version::integer()} | {error, Reason::term()}.
+set(Bucket, Key, Value) when is_atom(Bucket) ->
+	set(Bucket, Key, Value, ?MDB_VERSION_LAST);
+set(_, _, _) -> {error, badarg}.
 
--spec put(Bucket::atom(), Key::term(), Value::term(), ReadVersion::integer()) -> {ok, Version::integer()} | {error, Reason::term()}.
-put(Bucket, Key, Value, ReadVersion) when is_atom(Bucket) ->
+-spec set(Bucket::atom(), Key::term(), Value::term(), ReadVersion::integer()) -> {ok, Version::integer()} | {error, Reason::term()}.
+set(Bucket, Key, Value, ReadVersion) when is_atom(Bucket) ->
 	mdb_storage:with_bucket(Bucket, fun(BI) ->
 				WriteVersion = mdb_hlc:timestamp(),
 				?catcher(mdb_mvcc:update_value(BI, Key, Value, WriteVersion, ReadVersion))
 		end);
-put(_, _, _, _) -> {error, badarg}.
+set(_, _, _, _) -> {error, badarg}.
 
 -spec remove(Bucket::atom(), Key::term()) -> {ok, Version::integer()} | {error, Reason::term()}.
 remove(Bucket, Key) when is_atom(Bucket) -> 
