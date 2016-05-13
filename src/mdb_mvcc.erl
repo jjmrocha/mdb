@@ -118,9 +118,15 @@ validate_read_version(BI, Key, Version) ->
 		false -> system_abort(not_last_version)
 	end.
 	
-post_update(_BI, _Record) -> 
+post_update(BI, Record=?MDB_RECORD(Key, Version, _Value)) -> 
 	mdb_async:run(fun() ->
-			ok
+			PK = ?MDB_PK_RECORD(Key, Version),
+			case is_last_version(BI, PK) of
+				true -> 
+					mdb_event:notify(BI, Record),
+					ok;
+				false -> ok
+			end
 		end).
 
 % ---------- GET ----------
