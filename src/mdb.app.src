@@ -26,7 +26,8 @@
 	{applications, [
 		kernel, 
 		stdlib,
-		async
+		async,
+		event_broker
 	]},
 	{mod, {mdb_app, []}},
 	{env, [
