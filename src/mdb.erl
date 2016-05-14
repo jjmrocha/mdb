@@ -34,6 +34,7 @@
 -export([version/2, history/2, purge/1]).
 -export([fold/3, foreach/2, filter/2]).
 -export([delete/2, update/2]).
+-export([subscribe/1, unsubscribe/1]).
 
 start_link() ->
 	gen_server:start_link(?MODULE, [], []).
@@ -282,6 +283,18 @@ update(Fun, Bucket) when is_function(Fun, 2), is_atom(Bucket) ->
 				{ok, Acc1}
 		end);
 update(_, _) -> {error, badarg}.
+
+subscribe(Bucket) when is_atom(Bucket) ->
+	mdb_storage:with_bucket(Bucket, fun(BI) -> 
+				mdb_event:subscribe(BI)
+		end);
+subscribe(_) -> {error, badarg}.
+
+unsubscribe(Bucket) when is_atom(Bucket) ->
+	mdb_storage:with_bucket(Bucket, fun(BI) -> 
+				mdb_event:unsubscribe(BI)
+		end);
+unsubscribe(_) -> {error, badarg}.
 
 %% ====================================================================
 %% Behavioural functions

@@ -16,6 +16,9 @@
 
 -module(mdb_app).
 
+-include("mdb.hrl").
+-include("mdb_event.hrl").
+
 -behaviour(application).
 
 %% ====================================================================
@@ -27,6 +30,7 @@ start(_Type, _StartArgs) ->
 	{ok, Pid} = mdb_sup:start_link(),
 	{ok, Buckets} = application:get_env(buckets),
 	create_buckets(Buckets),
+	create_feed(),
 	{ok, Pid}.
 
 stop(_State) ->
@@ -43,3 +47,6 @@ create_buckets([{Name, Options}|T]) when is_atom(Name) andalso is_list(Options) 
 create_buckets([H|T]) ->
 	error_logger:error_msg("Invalid bucket configuration: ~p\n", [H]),
 	create_buckets(T).
+
+create_feed() ->
+	ok = eb_feed_sup:create_feed(?MDB_NOTIFICATION_FEED, [?MDB_EVENT_UPDATED, ?MDB_EVENT_DELETED]).

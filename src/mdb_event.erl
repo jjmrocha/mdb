@@ -20,18 +20,31 @@
 -include("mdb_event.hrl").
 
 -export([notify/2]).
+-export([subscribe/1, unsubscribe/1]).
 
-notify(#bucket{name=Bucket, options=Options}, Record) -> 
-	case lists:member(generate_events, Options) of
+notify(BI=#bucket{name=Bucket}, Record) -> 
+	case generate_events(BI) of
 		true -> 
 			Event = create_event(Bucket, Record),
-			event_broker:publish(Event);
+			eb_feed:publish(?MDB_NOTIFICATION_FEED, Event);
 		false -> ok 
 	end.
+
+subscribe(BI=#bucket{name=Bucket}) ->
+	case generate_events(BI) of
+		true -> eb_filter_by_ref:start_filter(?MDB_NOTIFICATION_FEED, Bucket);
+		false -> {error, bucket_do_not_generate_events}
+	end.
+
+unsubscribe(#bucket{name=Bucket}) ->
+	eb_filter_by_ref:stop_filter(?MDB_NOTIFICATION_FEED, Bucket).
   
 %% ====================================================================
 %% Internal functions
 %% ====================================================================
+
+generate_events(#bucket{options=Options}) ->
+	lists:member(generate_events, Options).
 
 create_event(Bucket, ?MDB_RECORD(Key, Version, ?MDB_RECORD_DELETED)) ->
 	create_event(?MDB_EVENT_DELETED, Bucket, Key, Version);
