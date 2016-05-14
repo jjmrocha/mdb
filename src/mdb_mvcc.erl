@@ -182,4 +182,4 @@ if_last_version(BI, PK, Fun) ->
 	case is_last_version(BI, PK) of
 		true -> Fun();
 		false -> ok
-	end,.
+	end.
