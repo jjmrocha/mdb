@@ -1,5 +1,5 @@
 %%
-%% Copyright 2015-16 Joaquim Rocha <jrocha@gmailbox.org>
+%% Copyright 2016 Joaquim Rocha <jrocha@gmailbox.org>
 %% 
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -19,7 +19,7 @@
 -export([run/1]).
 
 run(Fun) -> async:run(mdb_async, Fun).
-  
+
 %% ====================================================================
 %% Internal functions
 %% ====================================================================

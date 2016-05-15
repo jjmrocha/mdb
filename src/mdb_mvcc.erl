@@ -67,7 +67,7 @@ clean(BI) ->
 	{ok, Threshold} = application:get_env(mdb, obsolete_threshold),
 	TS = mdb_hlc:timestamp(Threshold),
 	clean(BI, TS).
-	
+
 clean(BI=#bucket{ets=TID}, TS) ->
 	MatchSpec = [{?MDB_RECORD('$1', '$2', '$3'), [{'<', '$2', TS}], ['$_']}],
 	case ets:select_reverse(TID, MatchSpec, 500) of
@@ -97,7 +97,7 @@ clean(BI, Continuation, LastKey, []) ->
 % ---------- UPDATE ----------
 remove_value(BI, Key, WriteVersion) ->
 	update_value(BI, Key, ?MDB_RECORD_DELETED, WriteVersion, ?MDB_VERSION_LAST).
-	
+
 remove_value(BI, Key, WriteVersion, ReadVersion) ->
 	update_value(BI, Key, ?MDB_RECORD_DELETED, WriteVersion, ReadVersion).
 
@@ -110,20 +110,20 @@ update_value(BI=#bucket{ets=TID}, Key, Value, WriteVersion, ReadVersion) ->
 	ets:insert(TID, Record),
 	post_update(BI, Record),
 	{ok, WriteVersion}.
-	
+
 validate_read_version(_BI, _Key, ?MDB_VERSION_LAST) -> ok;
 validate_read_version(BI, Key, Version) ->
 	case is_last_version(BI, ?MDB_PK_RECORD(Key, Version)) of
 		true -> ok;
 		false -> system_abort(not_last_version)
 	end.
-	
+
 post_update(BI, Record=?MDB_RECORD(Key, Version, _Value)) -> 
 	mdb_async:run(fun() ->
-			PK = ?MDB_PK_RECORD(Key, Version),
-			if_last_version(BI, PK, fun() ->
-					mdb_event:notify(BI, Record)
-				end)
+				PK = ?MDB_PK_RECORD(Key, Version),
+				if_last_version(BI, PK, fun() ->
+							mdb_event:notify(BI, Record)
+					end)
 		end).
 
 % ---------- GET ----------
@@ -144,7 +144,7 @@ get_value(#bucket{ets=TID}, Key) ->
 % ---------- VERSIONS ----------
 versions(#bucket{ets=TID}, Key) ->
 	versions(TID, ?MDB_PK_RECORD(Key, ?MDB_VERSION_LAST), []).
-	
+
 versions(TID, PK=?MDB_PK_RECORD(Key, _), Acc) ->
 	case ets:prev(TID, PK) of
 		'$end_of_table' when length(Acc) =:= 0 -> ?MDB_KEY_NOT_FOUND;
@@ -161,7 +161,7 @@ get_last_version(#bucket{ets=TID}, Key, Version) ->
 		Last = ?MDB_PK_RECORD(Key, _) -> Last;
 		_ -> ?MDB_KEY_NOT_FOUND
 	end.
-	
+
 fix_search_version(?MDB_VERSION_LAST) -> ?MDB_VERSION_LAST;
 fix_search_version(Version) -> Version + 0.1.
 

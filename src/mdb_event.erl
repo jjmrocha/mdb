@@ -33,12 +33,12 @@ notify(BI=#bucket{name=Bucket}, Record) ->
 subscribe(BI=#bucket{name=Bucket}) ->
 	case generate_events(BI) of
 		true -> eb_filter_by_ref:start_filter(?MDB_NOTIFICATION_FEED, Bucket);
-		false -> {error, bucket_do_not_generate_events}
+		false -> {error, bucket_do_not_generates_events}
 	end.
 
 unsubscribe(#bucket{name=Bucket}) ->
 	eb_filter_by_ref:stop_filter(?MDB_NOTIFICATION_FEED, Bucket).
-  
+
 %% ====================================================================
 %% Internal functions
 %% ====================================================================
