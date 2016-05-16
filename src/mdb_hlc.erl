@@ -122,4 +122,4 @@ decode(Time) ->
 	<<Logical:48, Counter:16>> = <<Time:64>>,
 	?hlc_timestamp(Logical, Counter).
 
-max(A, B, C) -> max(max(A, B), max(B, C)).
+max(A, B, C) -> max(max(A, B), C).
