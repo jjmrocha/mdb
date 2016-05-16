@@ -114,7 +114,7 @@ wall_clock() ->
 
 current_timestamp() -> ?hlc_timestamp(wall_clock(), 0).
 
-encode(#timestamp{l=Logical, c=Counter}) ->
+encode(?hlc_timestamp(Logical, Counter)) ->
 	<<Time:64>> = <<Logical:48, Counter:16>>,
 	Time.
 
