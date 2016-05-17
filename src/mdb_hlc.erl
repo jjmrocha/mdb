@@ -106,11 +106,10 @@ get_timestamp() ->
 	gen_server:call(?MODULE, {get_timestamp}).
 
 wall_clock() ->
-	TS = {_,_, Micro} = os:timestamp(),
-	Utc = calendar:now_to_universal_time(TS),
-	Seconds = calendar:datetime_to_gregorian_seconds(Utc),
+	{MegaSecs, Secs, Micro} = os:timestamp(),
+	Seconds = (MegaSeconds * 1000000) + Secs,
 	Fraction = Micro div 100,
-	((Seconds - 62167219200) * ?FRACTIONS_OF_SECOND) + Fraction.
+	(Seconds * ?FRACTIONS_OF_SECOND) + Fraction.
 
 current_timestamp() -> ?hlc_timestamp(wall_clock(), 0).
 
