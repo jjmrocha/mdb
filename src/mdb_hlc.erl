@@ -48,7 +48,7 @@ decode(Time) ->
 
 add_seconds(?hlc_timestamp(Logical, Counter), Seconds) ->
 	MS = Seconds * ?FRACTIONS_OF_SECOND,
-	?hlc_timestamp(Logical + S, Counter).
+	?hlc_timestamp(Logical + MS, Counter).
 
 update(ExternalTime) ->	gen_server:call(?MODULE, {update, ExternalTime}).
 
@@ -108,7 +108,7 @@ code_change(_OldVsn, State, _Extra) ->
 
 wall_clock() ->
 	{MegaSecs, Secs, Micro} = os:timestamp(),
-	Seconds = (MegaSeconds * 1000000) + Secs,
+	Seconds = (MegaSecs * 1000000) + Secs,
 	Fraction = Micro div 100,
 	(Seconds * ?FRACTIONS_OF_SECOND) + Fraction.
 
