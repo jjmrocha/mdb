@@ -72,7 +72,7 @@ drop_bucket(_) -> {error, badarg}.
 
 clean(Bucket) when is_atom(Bucket) ->	
 	mdb_storage:with_bucket(Bucket, fun(BI) ->
-				WriteVersion = mdb_hlc:timestamp(),
+				WriteVersion = mdb_clock:timestamp(),
 				Acc1 = mdb_mvcc:fold(BI, fun(Key, _Value, _Version, Acc) -> 
 								mdb_mvcc:remove_value(BI, Key, WriteVersion),
 								Acc + 1
@@ -125,7 +125,7 @@ to_list(_) -> {error, badarg}.
 -spec from_list(Bucket::atom(), KeyValueList::list()) -> ok | {error, Reason::term()}.
 from_list(Bucket, KeyValueList) when is_atom(Bucket), is_list(KeyValueList) -> 
 	mdb_storage:with_bucket(Bucket, fun(BI) -> 
-				WriteVersion = mdb_hlc:timestamp(),
+				WriteVersion = mdb_clock:timestamp(),
 				lists:foreach(fun({Key, Value}) ->
 							mdb_mvcc:update_value(BI, Key, Value, WriteVersion)
 					end, KeyValueList)
@@ -208,7 +208,7 @@ set(_, _, _) -> {error, badarg}.
 -spec set(Bucket::atom(), Key::term(), Value::term(), ReadVersion::integer()) -> {ok, Version::integer()} | {error, Reason::term()}.
 set(Bucket, Key, Value, ReadVersion) when is_atom(Bucket) ->
 	mdb_storage:with_bucket(Bucket, fun(BI) ->
-				WriteVersion = mdb_hlc:timestamp(),
+				WriteVersion = mdb_clock:timestamp(),
 				?catcher(mdb_mvcc:update_value(BI, Key, Value, WriteVersion, ReadVersion))
 		end);
 set(_, _, _, _) -> {error, badarg}.
@@ -223,7 +223,7 @@ remove(Bucket, Key, ReadVersion) when is_atom(Bucket) ->
 	mdb_storage:with_bucket(Bucket, fun(BI) ->
 				case mdb_mvcc:get_value(BI, Key, ReadVersion) of
 					{ok, _Value, Version} ->
-						WriteVersion = mdb_hlc:timestamp(),
+						WriteVersion = mdb_clock:timestamp(),
 						?catcher(mdb_mvcc:remove_value(BI, Key, WriteVersion, Version));
 					Other -> Other
 				end
@@ -256,7 +256,7 @@ filter(_, _) -> {error, badarg}.
 
 delete(Fun, Bucket) when is_function(Fun, 2), is_atom(Bucket) ->
 	mdb_storage:with_bucket(Bucket, fun(BI) -> 
-				WriteVersion = mdb_hlc:timestamp(),
+				WriteVersion = mdb_clock:timestamp(),
 				Acc1 = mdb_mvcc:fold(BI, fun(Key, Value, _Version, Acc) -> 
 								case Fun(Key, Value) of
 									true -> 
@@ -271,7 +271,7 @@ delete(_, _) -> {error, badarg}.
 
 update(Fun, Bucket) when is_function(Fun, 2), is_atom(Bucket) ->
 	mdb_storage:with_bucket(Bucket, fun(BI) -> 
-				WriteVersion = mdb_hlc:timestamp(),
+				WriteVersion = mdb_clock:timestamp(),
 				Acc1 = mdb_mvcc:fold(BI, fun(Key, Value, _Version, Acc) -> 
 								case Fun(Key, Value) of
 									{true, NewValue} -> 
