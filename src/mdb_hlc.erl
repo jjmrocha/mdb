@@ -28,25 +28,38 @@
 %% API functions
 %% ====================================================================
 -export([start_link/0]).
--export([timestamp/0, timestamp/1]).
--export([update/1]).
+-export([timestamp/0, encoded_timestamp/0]).
+-export([encode/1, decode/1]).
+-export([timestamp/1, encoded_timestamp/1]).
+-export([update/1, encoded_update/1]).
 
 start_link() ->
 	gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
+	
+timestamp() -> gen_server:call(?MODULE, {get_timestamp}).
+
+encoded_timestamp() -> encode(timestamp()).
+
+encode(?hlc_timestamp(Logical, Counter)) ->
+	<<Time:64>> = <<Logical:48, Counter:16>>,
+	Time.
+
+decode(Time) ->
+	<<Logical:48, Counter:16>> = <<Time:64>>,
+	?hlc_timestamp(Logical, Counter).
 
 timestamp(Seconds) ->
-	Timestamp = #timestamp{l=Logical} = get_timestamp(),
+	Timestamp = #timestamp{l=Logical} = timestamp(),
 	MS = Seconds * ?FRACTIONS_OF_SECOND,
-	encode(Timestamp#timestamp{l = Logical - MS}).
+	Timestamp#timestamp{l = Logical - MS}.
+	
+encoded_timestamp(Seconds) -> encode(timestamp(Seconds)).
 
-timestamp() ->
-	Timestamp = get_timestamp(),
-	encode(Timestamp).
-
-update(ExternalTime) ->
-	ExternalTS = decode(ExternalTime),
-	Timestamp = gen_server:call(?MODULE, {update, ExternalTS}),
-	encode(Timestamp).
+update(ExternalTime) when is_record(ExternalTime, timestamp) ->
+	gen_server:call(?MODULE, {update, ExternalTime});
+update(ExternalTime) -> update(decode(ExternalTime)),
+	
+encoded_update(ExternalTime) -> encode(update(ExternalTime)).
 
 %% ====================================================================
 %% Behavioural functions
@@ -102,9 +115,6 @@ code_change(_OldVsn, State, _Extra) ->
 %% Internal functions
 %% ====================================================================
 
-get_timestamp() ->
-	gen_server:call(?MODULE, {get_timestamp}).
-
 wall_clock() ->
 	{MegaSecs, Secs, Micro} = os:timestamp(),
 	Seconds = (MegaSeconds * 1000000) + Secs,
@@ -112,13 +122,5 @@ wall_clock() ->
 	(Seconds * ?FRACTIONS_OF_SECOND) + Fraction.
 
 current_timestamp() -> ?hlc_timestamp(wall_clock(), 0).
-
-encode(?hlc_timestamp(Logical, Counter)) ->
-	<<Time:64>> = <<Logical:48, Counter:16>>,
-	Time.
-
-decode(Time) ->
-	<<Logical:48, Counter:16>> = <<Time:64>>,
-	?hlc_timestamp(Logical, Counter).
 
 max(A, B, C) -> max(max(A, B), C).
