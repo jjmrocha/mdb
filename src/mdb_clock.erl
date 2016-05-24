@@ -26,7 +26,7 @@
 timestamp() -> mdb_hlc:encode(mdb_hlc:timestamp()).
 
 timestamp(Seconds) ->
-	Timestamp = timestamp(),
+	Timestamp = mdb_hlc:timestamp(),
 	NewTimestamp = mdb_hlc:add_seconds(Timestamp, -Seconds),
 	mdb_hlc:encode(NewTimestamp).
 
