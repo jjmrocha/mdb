@@ -28,17 +28,15 @@
 %% API functions
 %% ====================================================================
 -export([start_link/0]).
--export([timestamp/0, encoded_timestamp/0]).
+-export([timestamp/0]).
 -export([encode/1, decode/1]).
--export([timestamp/1, encoded_timestamp/1]).
--export([update/1, encoded_update/1]).
+-export([add_seconds/2]).
+-export([update/1]).
 
 start_link() ->
 	gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 	
-timestamp() -> gen_server:call(?MODULE, {get_timestamp}).
-
-encoded_timestamp() -> encode(timestamp()).
+timestamp() -> gen_server:call(?MODULE, {timestamp}).
 
 encode(?hlc_timestamp(Logical, Counter)) ->
 	<<Time:64>> = <<Logical:48, Counter:16>>,
@@ -48,18 +46,11 @@ decode(Time) ->
 	<<Logical:48, Counter:16>> = <<Time:64>>,
 	?hlc_timestamp(Logical, Counter).
 
-timestamp(Seconds) ->
-	Timestamp = #timestamp{l=Logical} = timestamp(),
+add_seconds(?hlc_timestamp(Logical, Counter), Seconds) ->
 	MS = Seconds * ?FRACTIONS_OF_SECOND,
-	Timestamp#timestamp{l = Logical - MS}.
-	
-encoded_timestamp(Seconds) -> encode(timestamp(Seconds)).
+	?hlc_timestamp(Logical + S, Counter).
 
-update(ExternalTime) when is_record(ExternalTime, timestamp) ->
-	gen_server:call(?MODULE, {update, ExternalTime});
-update(ExternalTime) -> update(decode(ExternalTime)),
-	
-encoded_update(ExternalTime) -> encode(update(ExternalTime)).
+update(ExternalTime) ->	gen_server:call(?MODULE, {update, ExternalTime}).
 
 %% ====================================================================
 %% Behavioural functions
@@ -72,7 +63,7 @@ init([]) ->
 	{ok, #state{last = current_timestamp()}}.
 
 %% handle_call/3
-handle_call({get_timestamp}, _From, State=#state{last=LastTS}) ->
+handle_call({timestamp}, _From, State=#state{last=LastTS}) ->
 	Now = wall_clock(),
 	Logical = max(Now, LastTS#timestamp.l),
 	Counter = if 
