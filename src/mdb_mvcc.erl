@@ -29,7 +29,7 @@
 
 % ---------- FOLD ----------
 fold(BI, Fun, Acc) ->
-	ReadVersion = mdb_hlc:timestamp(),
+	ReadVersion = mdb_clock:timestamp(),
 	fold(BI, Fun, Acc, ReadVersion).
 
 fold(#bucket{ets=TID}, Fun, Acc, Version) ->
@@ -55,7 +55,7 @@ fold(TID, Fun, Acc, Continuation, LastKey, []) ->
 % ---------- CLEAN ----------
 clean() ->
 	{ok, Threshold} = application:get_env(mdb, obsolete_threshold),
-	TS = mdb_hlc:timestamp(Threshold),
+	TS = mdb_clock:timestamp(Threshold),
 	mdb_storage:fold(fun(BI=#bucket{options=Options}, _Acc) ->
 				case lists:member(keep_history, Options) of
 					true -> ok;
@@ -65,7 +65,7 @@ clean() ->
 
 clean(BI) ->
 	{ok, Threshold} = application:get_env(mdb, obsolete_threshold),
-	TS = mdb_hlc:timestamp(Threshold),
+	TS = mdb_clock:timestamp(Threshold),
 	clean(BI, TS).
 
 clean(BI=#bucket{ets=TID}, TS) ->
