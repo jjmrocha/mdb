@@ -49,4 +49,4 @@ create_buckets([H|T]) ->
 	create_buckets(T).
 
 create_feed() ->
-	ok = eb_feed_sup:create_feed(?MDB_NOTIFICATION_FEED, true, [?MDB_EVENT_UPDATED, ?MDB_EVENT_DELETED]).
+	ok = eb_feed_sup:create_feed(?MDB_NOTIFICATION_FEED, true, []).
