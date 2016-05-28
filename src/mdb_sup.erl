@@ -37,11 +37,7 @@ init([]) ->
 	Server = {mdb, {mdb, start_link, []}, permanent, infinity, worker, [mdb]},
 	Clock = {mdb_hlc, {mdb_hlc, start_link, []}, permanent, infinity, worker, [mdb_hlc]},
 	
-	{ok, Multiplier} = application:get_env(async_processes_by_core),
-	WorkerCount = erlang:system_info(schedulers) * Multiplier,
-	Async = {mdb_async, {async, start_pool, [mdb_async, WorkerCount]}, permanent, infinity, supervisor, [worker_pool_sup, async]},
-	
-	Procs = [Server, Async, Clock],
+	Procs = [Server, Clock],
 	{ok, {{one_for_one, 5, 60}, Procs}}.
 
 %% ====================================================================
