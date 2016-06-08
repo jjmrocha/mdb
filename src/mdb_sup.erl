@@ -36,8 +36,9 @@ start_link() ->
 init([]) ->
 	Server = {mdb, {mdb, start_link, []}, permanent, infinity, worker, [mdb]},
 	Clock = {mdb_hlc, {mdb_hlc, start_link, []}, permanent, infinity, worker, [mdb_hlc]},
+	Async = {mdb_async, {async_queue, start_link, [mdb_async]}, permanent, infinity, worker, [async_queue]},
 	
-	Procs = [Server, Clock],
+	Procs = [Server, Clock, Async],
 	{ok, {{one_for_one, 5, 60}, Procs}}.
 
 %% ====================================================================
