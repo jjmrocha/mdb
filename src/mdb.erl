@@ -326,8 +326,8 @@ handle_info(_Info, State) ->
 
 %% terminate/2
 terminate(_Reason, #state{timer_ref=Timer}) ->
-	mdb_storage:drop(),
 	timer:cancel(Timer),
+	mdb_storage:drop(),
 	ok.
 
 %% code_change/3
