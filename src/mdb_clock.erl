@@ -23,11 +23,11 @@
 -export([timestamp/1]).
 -export([update/1]).
 	
-timestamp() -> hlc:encode(hlc:timestamp()).
+timestamp() -> nomad_hlc:encode(nomad_hlc:timestamp()).
 
 timestamp(Seconds) ->
-	{Type, Logical, Counter} = hlc:timestamp(),
+	{Type, Logical, Counter} = nomad_hlc:timestamp(),
 	MS = Seconds * 1000,
-	hlc:encode({Type, Logical - MS, Counter}).
+	nomad_hlc:encode({Type, Logical - MS, Counter}).
 
-update(ExternalTime) -> hlc:update(ExternalTime).
+update(ExternalTime) -> nomad_hlc:update(ExternalTime).
