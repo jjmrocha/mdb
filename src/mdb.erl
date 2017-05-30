@@ -1,5 +1,5 @@
 %%
-%% Copyright 2016 Joaquim Rocha <jrocha@gmailbox.org>
+%% Copyright 2016-17 Joaquim Rocha <jrocha@gmailbox.org>
 %% 
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -28,7 +28,7 @@
 -export([start_link/0]).
 -export([memory/0]).
 -export([buckets/0]).
--export([create_bucket/2, drop_bucket/1, size/1, keys/1, memory/1, clean/1]).
+-export([create_bucket/2, drop_bucket/1, size/1, keys/1, memory/1, clear/1]).
 -export([to_list/1, from_list/2]).
 -export([get/2, get/3, set/3, set/4, remove/2, remove/3]).
 -export([version/2, history/2, purge/1]).
@@ -70,7 +70,7 @@ drop_bucket(Bucket) when is_atom(Bucket) ->
 	mdb_storage:drop(Bucket);
 drop_bucket(_) -> {error, badarg}.
 
-clean(Bucket) when is_atom(Bucket) ->	
+clear(Bucket) when is_atom(Bucket) ->	
 	mdb_storage:with_bucket(Bucket, fun(BI) ->
 				WriteVersion = mdb_clock:timestamp(),
 				Acc1 = mdb_mvcc:fold(BI, fun(Key, _Value, _Version, Acc) -> 
@@ -79,7 +79,7 @@ clean(Bucket) when is_atom(Bucket) ->
 						end, 0),
 				{ok, Acc1}
 		end);
-clean(_) -> {error, badarg}.
+clear(_) -> {error, badarg}.
 
 %% @doc Returs the number of keys on the bucket
 %% Returns:
