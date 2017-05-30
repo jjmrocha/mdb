@@ -1,5 +1,5 @@
 %%
-%% Copyright 2016 Joaquim Rocha <jrocha@gmailbox.org>
+%% Copyright 2016-17 Joaquim Rocha <jrocha@gmailbox.org>
 %% 
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -34,11 +34,14 @@ start_link() ->
 
 %% init/1
 init([]) ->
-	Server = {mdb, {mdb, start_link, []}, permanent, infinity, worker, [mdb]},
-	Clock = {mdb_hlc, {mdb_hlc, start_link, []}, permanent, infinity, worker, [mdb_hlc]},
-	
-	Procs = [Server, Clock],
-	{ok, {{one_for_one, 5, 60}, Procs}}.
+	Server = #{id => mdb, 
+			start => {mdb, start_link, []}, 
+			restart => permanent, 
+			type => worker},
+	SupFlags = #{strategy => one_for_one, 
+			intensity => 2, 
+			period => 10},
+	{ok, {SupFlags, [Server]}}.
 
 %% ====================================================================
 %% Internal functions

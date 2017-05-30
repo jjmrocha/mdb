@@ -1,5 +1,5 @@
 %%
-%% Copyright 2016 Joaquim Rocha <jrocha@gmailbox.org>
+%% Copyright 2016-17 Joaquim Rocha <jrocha@gmailbox.org>
 %% 
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -23,14 +23,11 @@
 -export([timestamp/1]).
 -export([update/1]).
 	
-timestamp() -> mdb_hlc:encode(mdb_hlc:timestamp()).
+timestamp() -> hlc:encode(hlc:timestamp()).
 
 timestamp(Seconds) ->
-	Timestamp = mdb_hlc:timestamp(),
-	NewTimestamp = mdb_hlc:add_seconds(Timestamp, -Seconds),
-	mdb_hlc:encode(NewTimestamp).
+	{Type, Logical, Counter} = hlc:timestamp(),
+	MS = Seconds * 1000,
+	hlc:encode({Type, Logical - MS, Counter}).
 
-update(ExternalTime) ->
-	Timestamp = mdb_hlc:decode(ExternalTime),
-	NewTimestamp = mdb_hlc:update(Timestamp),
-	mdb_hlc:encode(NewTimestamp).
+update(ExternalTime) -> hlc:update(ExternalTime).
