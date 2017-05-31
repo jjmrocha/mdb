@@ -1,5 +1,5 @@
 %%
-%% Copyright 2016 Joaquim Rocha <jrocha@gmailbox.org>
+%% Copyright 2016-17 Joaquim Rocha <jrocha@gmailbox.org>
 %% 
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -19,16 +19,38 @@
 -include("mdb.hrl").
 -include("mdb_event.hrl").
 
+-behaviour(gen_server).
+
+%% ====================================================================
+%% Constants
+%% ====================================================================
+-define(SERVER, {local, ?MODULE}).
+
+%% ====================================================================
+%% Behavioural functions definition
+%% ====================================================================
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
+
+%% ====================================================================
+%% API functions
+%% ====================================================================
+-export([start_link/0]).
 -export([notify/2]).
 -export([subscribe/1, unsubscribe/1]).
 
-notify(BI=#bucket{name=Bucket}, Record) -> 
-	case generate_events(BI) of
-		true -> 
-			Event = create_event(Bucket, Record),
-			eb_feed:publish(?MDB_NOTIFICATION_FEED, Event);
-		false -> ok 
-	end.
+start_link() ->
+	gen_server:start_link(?SERVER, ?MODULE, [], []).
+
+notify(BI=#bucket{name=Bucket}, Record) ->
+	%TODO testes
+	gen_server:call(?MODULE, {notify, BI, Record}),
+	ok. 
+%	case generate_events(BI) of
+%		true -> 
+%			Event = create_event(Bucket, Record),
+%			eb_feed:publish(?MDB_NOTIFICATION_FEED, Event);
+%		false -> ok 
+%	end.
 
 subscribe(BI=#bucket{name=Bucket}) ->
 	case generate_events(BI) of
@@ -38,6 +60,43 @@ subscribe(BI=#bucket{name=Bucket}) ->
 
 unsubscribe(#bucket{name=Bucket}) ->
 	eb_filter_by_ref:stop_filter(?MDB_NOTIFICATION_FEED, Bucket).
+
+
+%% ====================================================================
+%% Behavioural functions
+%% ====================================================================
+-record(state, {}).
+
+%% init/1
+init([]) ->
+	error_logger:info_msg("~p starting on [~p]...\n", [?MODULE, self()]),
+	{ok, #state{}}.
+
+%% handle_call/3
+handle_call(Request, From, State) ->
+	error_logger:error_msg("Request: ~w || From: ~w || State: ~w~n", [Request, From, State]),
+%5>
+%=ERROR REPORT==== 30-May-2017::13:01:12 ===
+%Request: {trata,goncalo} || From: {<0.55.0>,#Ref<0.0.3.83>} || State: {state}
+%5>    
+	Reply = ok,
+	{reply, Reply, State}.
+
+%% handle_cast/2
+handle_cast(Msg, State) ->
+	{noreply, State}.
+
+%% handle_info/2
+handle_info(Info, State) ->
+	{noreply, State}.
+
+%% terminate/2
+terminate(Reason, State) ->
+	ok.
+
+%% code_change/3
+code_change(_OldVsn, State, _Extra) ->
+	{ok, State}.
 
 %% ====================================================================
 %% Internal functions
