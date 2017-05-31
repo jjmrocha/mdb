@@ -18,7 +18,7 @@
 
 -export([run/1]).
 
-run(Fun) -> async:run(mdb_async, Fun).
+run(Fun) -> nomad_async:run(mdb_async, Fun).
 
 %% ====================================================================
 %% Internal functions
