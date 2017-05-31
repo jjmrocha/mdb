@@ -25,8 +25,7 @@
 	{applications, [
 		kernel, 
 		stdlib,
-		async,
-		hlc
+		nomad
 	]},
 	{mod, {mdb_app, []}},
 	{env, [
