@@ -48,7 +48,10 @@ unsubscribe(BI=#bucket{name=Bucket}) ->
 	do_if_generates_events(BI, fun() -> gen_server:call(?MODULE, {unsubscribe, Bucket}) end).
 
 notify(BI=#bucket{name=Bucket}, Record) ->
-	do_if_generates_events(BI, fun() -> gen_server:abcast(?MODULE, {notify, Bucket, Record}) end).
+	do_if_generates_events(BI, fun() ->
+	                               Event = create_event(Bucket, Record),
+	                               gen_server:abcast(?MODULE, {notify, Bucket, Event})
+	                           end).
 
 %% ====================================================================
 %% Behavioural functions
@@ -81,7 +84,7 @@ handle_call({unsubscribe, Bucket}, {Subscriber, _Ref}, State) ->
 	case ets:select(?SUBSCRIPTION_TABLE, [{#subscription{bucket=Bucket, subscriber=Subscriber, _='_'}, [], ['$_']}]) of
 		[] ->
 			% Subscription does not exist
-			done;		
+			done;
 		[Subscription] ->
 			% Subscription exists
 			erlang:demonitor(Subscription#subscription.monitor_ref),
@@ -94,9 +97,8 @@ handle_call(_Request, _From, State) ->
 
 
 %% handle_cast/2
-handle_cast({notify, Bucket, Record}, State) ->
+handle_cast({notify, Bucket, Event}, State) ->
 	% Send the Event to all subscribers
-	Event = create_event(Bucket, Record),
 	Subscribers = ets:select(?SUBSCRIPTION_TABLE, [{#subscription{bucket=Bucket, subscriber='$1', _='_'}, [], ['$1']}]),
 	lists:foreach(fun(Subscriber) -> Subscriber ! Event end, Subscribers),
 	{noreply, State};
