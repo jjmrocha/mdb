@@ -1,5 +1,5 @@
 %%
-%% Copyright 2016 Joaquim Rocha <jrocha@gmailbox.org>
+%% Copyright 2016-17 Joaquim Rocha <jrocha@gmailbox.org>
 %% 
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -14,8 +14,8 @@
 %% limitations under the License.
 %%
 
--define(MDB_EVENT_UPDATED, <<"mdb:updated">>).
--define(MDB_EVENT_DELETED, <<"mdb:deleted">>).
+-define(MDB_EVENT_UPDATED, mdb_write).
+-define(MDB_EVENT_DELETED, mdb_delete).
 
 -define(MDB_EVENT_FIELD_KEY, key).
 -define(MDB_EVENT_FIELD_VERSION, version).

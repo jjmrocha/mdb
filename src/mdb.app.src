@@ -20,7 +20,8 @@
 	{modules, [
 	]},
 	{registered, [ 
-		mdb_async
+		mdb_async,
+		mdb_event
 	]},
 	{applications, [
 		kernel, 

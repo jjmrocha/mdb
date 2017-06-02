@@ -25,6 +25,7 @@
 %% Constants
 %% ====================================================================
 -define(SERVER, {local, ?MODULE}).
+-define(SUBSCRIPTION_TABLE, '$mdb.subscription.table').
 
 %% ====================================================================
 %% Behavioural functions definition
@@ -35,63 +36,87 @@
 %% API functions
 %% ====================================================================
 -export([start_link/0]).
--export([notify/2]).
--export([subscribe/1, unsubscribe/1]).
+-export([subscribe/1, unsubscribe/1, notify/2]).
 
 start_link() ->
 	gen_server:start_link(?SERVER, ?MODULE, [], []).
 
-notify(BI=#bucket{name=Bucket}, Record) ->
-	%TODO testes
-	gen_server:call(?MODULE, {notify, BI, Record}),
-	ok. 
-%	case generate_events(BI) of
-%		true -> 
-%			Event = create_event(Bucket, Record),
-%			eb_feed:publish(?MDB_NOTIFICATION_FEED, Event);
-%		false -> ok 
-%	end.
-
 subscribe(BI=#bucket{name=Bucket}) ->
-	case generate_events(BI) of
-		true -> eb_filter_by_ref:start_filter(?MDB_NOTIFICATION_FEED, Bucket);
-		false -> {error, bucket_do_not_generates_events}
-	end.
+	do_if_generates_events(BI, fun() -> gen_server:call(?MODULE, {subscribe, Bucket}) end).
 
-unsubscribe(#bucket{name=Bucket}) ->
-	eb_filter_by_ref:stop_filter(?MDB_NOTIFICATION_FEED, Bucket).
+unsubscribe(BI=#bucket{name=Bucket}) ->
+	do_if_generates_events(BI, fun() -> gen_server:call(?MODULE, {unsubscribe, Bucket}) end).
 
+notify(BI=#bucket{name=Bucket}, Record) ->
+	do_if_generates_events(BI, fun() -> gen_server:abcast(?MODULE, {notify, Bucket, Record}) end).
 
 %% ====================================================================
 %% Behavioural functions
 %% ====================================================================
 -record(state, {}).
+-record(subscription, {bucket, subscriber, monitor_ref}).
 
 %% init/1
 init([]) ->
 	error_logger:info_msg("~p starting on [~p]...\n", [?MODULE, self()]),
+	% Create the subscription table
+	nomad_keeper:create(?SUBSCRIPTION_TABLE, [bag, {keypos, #subscription.bucket}, private, named_table]),
 	{ok, #state{}}.
 
+
 %% handle_call/3
-handle_call(Request, From, State) ->
-	error_logger:error_msg("Request: ~w || From: ~w || State: ~w~n", [Request, From, State]),
-%5>
-%=ERROR REPORT==== 30-May-2017::13:01:12 ===
-%Request: {trata,goncalo} || From: {<0.55.0>,#Ref<0.0.3.83>} || State: {state}
-%5>    
-	Reply = ok,
-	{reply, Reply, State}.
+handle_call({subscribe, Bucket}, {Subscriber, _Ref}, State) ->
+	case ets:select(?SUBSCRIPTION_TABLE, [{#subscription{bucket=Bucket, subscriber=Subscriber, _='_'}, [], ['$_']}]) of
+		[] ->
+			% New subscribtion
+			MonitorRef = erlang:monitor(process, Subscriber),
+			ets:insert(?SUBSCRIPTION_TABLE, #subscription{bucket=Bucket, subscriber=Subscriber, monitor_ref=MonitorRef});
+		_ ->
+			% Subscription exists
+			done
+	end,
+	{reply, ok, State};
+
+handle_call({unsubscribe, Bucket}, {Subscriber, _Ref}, State) ->
+	case ets:select(?SUBSCRIPTION_TABLE, [{#subscription{bucket=Bucket, subscriber=Subscriber, _='_'}, [], ['$_']}]) of
+		[] ->
+			% Subscription does not exist
+			done;		
+		[Subscription] ->
+			% Subscription exists
+			erlang:demonitor(Subscription#subscription.monitor_ref),
+			ets:delete_object(?SUBSCRIPTION_TABLE, Subscription)
+	end,
+	{reply, ok, State};
+
+handle_call(_Request, _From, State) ->
+	{reply, ok, State}.
+
 
 %% handle_cast/2
-handle_cast(Msg, State) ->
+handle_cast({notify, Bucket, Record}, State) ->
+	% Send the Event to all subscribers
+	Event = create_event(Bucket, Record),
+	Subscribers = ets:select(?SUBSCRIPTION_TABLE, [{#subscription{bucket=Bucket, subscriber='$1', _='_'}, [], ['$1']}]),
+	lists:foreach(fun(Subscriber) -> Subscriber ! Event end, Subscribers),
+	{noreply, State};
+
+handle_cast(_Request, State) ->
 	{noreply, State}.
 
+
 %% handle_info/2
-handle_info(Info, State) ->
+handle_info({'DOWN', MonitorRef, process, Subscriber, _Info}, State) ->
+	% One of the monitored processes ended: clean all subscriptions
+	ets:select_delete(?SUBSCRIPTION_TABLE, [{#subscription{subscriber=Subscriber, monitor_ref=MonitorRef, _='_'}, [], [true]}]),
+	{noreply, State};
+
+handle_info(_Info, State) ->
 	{noreply, State}.
 
 %% terminate/2
-terminate(Reason, State) ->
+terminate(Reason, _State) ->
+	drop_table(Reason),
 	ok.
 
 %% code_change/3
@@ -101,15 +126,24 @@ code_change(_OldVsn, State, _Extra) ->
 %% ====================================================================
 %% Internal functions
 %% ====================================================================
+do_if_generates_events(BI, Fun) ->
+	case generate_events(BI) of
+		true -> Fun();
+		false -> {error, bucket_do_not_generate_events}
+	end.
 
 generate_events(#bucket{options=Options}) ->
 	lists:member(generate_events, Options).
 
-create_event(Bucket, ?MDB_RECORD(Key, Version, ?MDB_RECORD_DELETED)) ->
-	create_event(?MDB_EVENT_DELETED, Bucket, Key, Version);
-create_event(Bucket, ?MDB_RECORD(Key, Version, _Value)) ->
-	create_event(?MDB_EVENT_UPDATED, Bucket, Key, Version).
+create_event(Bucket, ?MDB_RECORD(Key, _Version, ?MDB_RECORD_DELETED)) ->
+	create_event(?MDB_EVENT_DELETED, Bucket, Key);
+create_event(Bucket, ?MDB_RECORD(Key, _Version, _Value)) ->
+	create_event(?MDB_EVENT_UPDATED, Bucket, Key).
 
-create_event(EventName, Bucket, Key, Version) ->
-	Info = #{?MDB_EVENT_FIELD_KEY => Key, ?MDB_EVENT_FIELD_VERSION => Version},
-	eb_event:new(EventName, Bucket, Info).
+create_event(EventName, Bucket, Key) ->
+	{EventName, Bucket, Key}.
+
+drop_table(normal) -> nomad_keeper:drop(?SUBSCRIPTION_TABLE);
+drop_table(shutdown) -> nomad_keeper:drop(?SUBSCRIPTION_TABLE);
+drop_table({shutdown, _}) -> nomad_keeper:drop(?SUBSCRIPTION_TABLE);
+drop_table(_) -> ok.

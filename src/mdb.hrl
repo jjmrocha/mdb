@@ -1,5 +1,5 @@
 %%
-%% Copyright 2016 Joaquim Rocha <jrocha@gmailbox.org>
+%% Copyright 2016-17 Joaquim Rocha <jrocha@gmailbox.org>
 %% 
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -24,8 +24,6 @@
 
 -define(MDB_RECORD_DELETED, '$mdb_record_deleted').
 -define(MDB_KEY_NOT_FOUND, '$mdb_key_not_found').
-
--define(MDB_NOTIFICATION_FEED, '$mdb_notification_feed').
 
 -define(catcher(Call), 
 	try Call
