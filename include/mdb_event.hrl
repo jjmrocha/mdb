@@ -16,6 +16,3 @@
 
 -define(MDB_EVENT_UPDATED, mdb_write).
 -define(MDB_EVENT_DELETED, mdb_delete).
-
--define(MDB_EVENT_FIELD_KEY, key).
--define(MDB_EVENT_FIELD_VERSION, version).

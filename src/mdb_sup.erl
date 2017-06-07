@@ -34,18 +34,14 @@ start_link() ->
 
 %% init/1
 init([]) ->
-	MdbServer = #{id => mdb, 
+	Server = #{id => mdb, 
 			start => {mdb, start_link, []}, 
-			restart => permanent, 
-			type => worker},
-	EventServer = #{id => mdb_event, 
-			start => {mdb_event, start_link, []}, 
 			restart => permanent, 
 			type => worker},
 	SupFlags = #{strategy => one_for_one, 
 			intensity => 2, 
 			period => 10},
-	{ok, {SupFlags, [MdbServer, EventServer]}}.
+	{ok, {SupFlags, [Server]}}.
 
 %% ====================================================================
 %% Internal functions
