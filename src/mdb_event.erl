@@ -22,7 +22,8 @@
 %% ====================================================================
 %% Constants
 %% ====================================================================
--define(get_event_group(Bucket), {'$mdb.event.group', Bucket}).
+-define(EVENT_GROUP(Bucket), {'$mdb.event.group', Bucket}).
+-define(EVENT(EventName, Bucket, Key), {EventName, Bucket, Key}).
 
 %% ====================================================================
 %% API functions
@@ -30,33 +31,30 @@
 -export([subscribe/1, unsubscribe/1, notify/2]).
 
 subscribe(BI=#bucket{name=Bucket}) ->
-	do_if_generates_events(BI, fun() -> nomad_group:join(?get_event_group(Bucket)) end).
+	if_generates_events(BI, fun() -> nomad_group:join(?EVENT_GROUP(Bucket)) end).
 
 unsubscribe(BI=#bucket{name=Bucket}) ->
-	do_if_generates_events(BI, fun() -> nomad_group:leave(?get_event_group(Bucket)) end).
+	if_generates_events(BI, fun() -> nomad_group:leave(?EVENT_GROUP(Bucket)) end).
 
 notify(BI=#bucket{name=Bucket}, Record) ->
-	do_if_generates_events(BI, fun() ->
+	if_generates_events(BI, fun() ->
 	                               Event = create_event(Bucket, Record),
-	                               nomad_group:publish(?get_event_group(Bucket), Event)
+	                               nomad_group:publish(?EVENT_GROUP(Bucket), Event)
 	                           end).
 
 %% ====================================================================
 %% Internal functions
 %% ====================================================================
-do_if_generates_events(BI, Fun) ->
-	case generate_events(BI) of
-		true -> Fun();
-		false -> {error, bucket_does_not_generate_events}
-	end.
+if_generates_events(BI, Fun) ->
+	run_if(generate_events(BI), Fun, {error, bucket_does_not_generate_events}).
+
+run_if(true, Fun, _) -> Fun();
+run_if(false, _, Else) -> Else.
 
 generate_events(#bucket{options=Options}) ->
 	lists:member(generate_events, Options).
 
 create_event(Bucket, ?MDB_RECORD(Key, _Version, ?MDB_RECORD_DELETED)) ->
-	create_event(?MDB_EVENT_DELETED, Bucket, Key);
+	?EVENT(?MDB_EVENT_DELETED, Bucket, Key);
 create_event(Bucket, ?MDB_RECORD(Key, _Version, _Value)) ->
-	create_event(?MDB_EVENT_UPDATED, Bucket, Key).
-
-create_event(EventName, Bucket, Key) ->
-	{EventName, Bucket, Key}.
+	?EVENT(?MDB_EVENT_UPDATED, Bucket, Key).
